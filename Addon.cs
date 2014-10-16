@@ -7,7 +7,7 @@ namespace BackgroundProcessing {
     public class Addon : MonoBehaviour {
 		private Dictionary<Guid, HashSet<Callback<Vessel>>> backgroundCallbacks = new Dictionary<Guid, HashSet<Callback<Vessel>>>();
 
-		public Addon Instance { get; private set; }
+		static public Addon Instance { get; private set; }
 
 		public Addon() {
 			Instance = this;
@@ -17,15 +17,16 @@ namespace BackgroundProcessing {
 			DontDestroyOnLoad(this);
 		}
 
-		public void RegisterCallback(Guid vesselId, Callback<Vessel> backgroundCallback) {
-			HashSet<Callback<Vessel>> list;
-			backgroundCallbacks.TryGetValue(vesselId, out list);
-			list.Add(backgroundCallback);
+		static public void RegisterCallback(Guid vesselId, Callback<Vessel> backgroundCallback) {
+			Debug.Log("BackgroundProcessing: Callback registered");
+
+			if (!Instance.backgroundCallbacks.ContainsKey(vesselId)) { Instance.backgroundCallbacks.Add(vesselId, new HashSet<Callback<Vessel>>()); }
+			Instance.backgroundCallbacks[vesselId].Add(backgroundCallback);
 		}
 
-		public void UnregisterCallback(Guid vesselId, Callback<Vessel> backgroundCallback) {
-			if (backgroundCallbacks.ContainsKey(vesselId)) {
-				backgroundCallbacks[vesselId].Remove(backgroundCallback);
+		static public void UnregisterCallback(Guid vesselId, Callback<Vessel> backgroundCallback) {
+			if (Instance.backgroundCallbacks.ContainsKey(vesselId)) {
+				Instance.backgroundCallbacks[vesselId].Remove(backgroundCallback);
 			}
 		}
 
