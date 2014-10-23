@@ -5,9 +5,50 @@ using UnityEngine;
 namespace BackgroundProcessing {
 	[KSPAddon(KSPAddon.Startup.Instantly, true)]
     public class Addon : MonoBehaviour {
-		private Dictionary<Guid, HashSet<Callback<Vessel>>> backgroundCallbacks = new Dictionary<Guid, HashSet<Callback<Vessel>>>();
+
+		public void RegisterHandler(String moduleName, IBackgroundHandler handler) {
+			if (moduleHandlers.ContainsKey(moduleName)) { moduleHandlers[moduleName] = handler; }
+			else { moduleHandlers.Add(moduleName, handler); }
+		}
 
 		static public Addon Instance { get; private set; }
+		private Dictionary<Vessel, VesselData> vesselData = new Dictionary<Vessel, VesselData>();
+		private Dictionary<String, IBackgroundHandler> moduleHandlers = new Dictionary<String, IBackgroundHandler>();
+
+		private struct CallbackPair {
+			public String moduleName;
+			public uint partFlightID;
+
+			public CallbackPair(String m, uint i) {
+				moduleName = m;
+				partFlightID = i;
+			}
+		};
+
+		private class VesselData {
+			public List<CallbackPair> callbacks = new List<CallbackPair>();
+		}
+
+		private VesselData GetVesselData(Vessel v)
+		{
+			VesselData ret = new VesselData();
+
+			foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
+				foreach (ProtoPartModuleSnapshot m in p.modules) {
+					if (moduleHandlers.ContainsKey(m.moduleName)) {
+						ret.callbacks.Add(new CallbackPair(m.moduleName, p.flightID));
+					}
+				}
+			}
+
+			Debug.Log("BackgroundProcessing: Found " + ret.callbacks.Count + " background modules on vessel " + v.name);
+
+			return ret;
+		}
+
+		private bool CanGetVesselData(Vessel v) {
+			return v.protoVessel != null;
+		}
 
 		public Addon() {
 			Instance = this;
@@ -17,29 +58,21 @@ namespace BackgroundProcessing {
 			DontDestroyOnLoad(this);
 		}
 
-		static public void RegisterCallback(Guid vesselId, Callback<Vessel> backgroundCallback) {
-			Debug.Log("BackgroundProcessing: Callback registered");
-
-			if (!Instance.backgroundCallbacks.ContainsKey(vesselId)) { Instance.backgroundCallbacks.Add(vesselId, new HashSet<Callback<Vessel>>()); }
-			Instance.backgroundCallbacks[vesselId].Add(backgroundCallback);
-		}
-
-		static public void UnregisterCallback(Guid vesselId, Callback<Vessel> backgroundCallback) {
-			if (Instance.backgroundCallbacks.ContainsKey(vesselId)) {
-				Instance.backgroundCallbacks[vesselId].Remove(backgroundCallback);
-			}
-		}
-
 		public void FixedUpdate() {
 			if (FlightGlobals.fetch != null) {
 				List<Vessel> vessels = new List<Vessel>(FlightGlobals.Vessels);
 
 				foreach (Vessel v in vessels) {
-					if (v.packed) {
-						if (backgroundCallbacks.ContainsKey(v.id)) {
-							foreach (Callback<Vessel> c in backgroundCallbacks[v.id]) {
-								c.Invoke(v);
-							}
+					if (!vesselData.ContainsKey(v)) {
+						if (!CanGetVesselData(v)) {continue;}
+
+						vesselData.Add(v, GetVesselData(v));
+					}
+
+					if (!(v.situation == Vessel.Situations.PRELAUNCH) && (!v.loaded || v.packed)) {
+						
+						foreach (CallbackPair p in vesselData[v].callbacks) {
+							moduleHandlers[p.moduleName].FixedBackgroundUpdate(v, p.partFlightID);
 						}
 					}
 				}
