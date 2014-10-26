@@ -16,6 +16,8 @@ namespace BackgroundProcessing {
 		private Dictionary<String, IBackgroundHandler> moduleHandlers = new Dictionary<String, IBackgroundHandler>();
 
 		// Need to load into this somehow (config file)
+		// Also module name isn't sufficient to identify resource use (ModuleGenerator). Part name? Seems inelegant, doesn't scale.
+		// Special case ModuleGenerator? What if there are others? Are there others? Also inelegant.
 		private Dictionary<String, ResourceModuleData> resourceData = new Dictionary<String, ResourceModuleData>();
 
 		private struct CallbackPair {
@@ -53,6 +55,7 @@ namespace BackgroundProcessing {
 			}
 
 			Debug.Log("BackgroundProcessing: Found " + ret.callbacks.Count + " background modules on vessel " + v.name);
+			Debug.Log("BackgroundProcessing: Found " + ret.resourceModules.Count + " resource modules on vessel " + v.name);
 
 			return ret;
 		}
@@ -67,9 +70,17 @@ namespace BackgroundProcessing {
 
 		public void Start() {
 			DontDestroyOnLoad(this);
+
+			ResourceModuleData d = new ResourceModuleData();
+			d.resourceAmount = 0.75f;
+			d.resourceName = "ElectricCharge";
+
+			resourceData.Add("ModuleGenerator", d);
 		}
 
 		private void HandleResources(Vessel v) {
+			Debug.Log("BackgroundProcessing: HandleResources on " + v.vesselName);
+
 			VesselData data = vesselData[v];
 			Dictionary<String, List<ProtoPartResourceSnapshot>> storage = new Dictionary<String, List<ProtoPartResourceSnapshot>>();
 
@@ -82,15 +93,59 @@ namespace BackgroundProcessing {
 				}
 			}
 
+			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
+
 			foreach (ResourceModuleData d in data.resourceModules) {
 				if (!storage.ContainsKey(d.resourceName)) {continue;}
 
-				float amount = d.resourceAmount;
-				foreach (ProtoPartResourceSnapshot r in storage[d.resourceName]) {
+				float amount = d.resourceAmount * TimeWarp.CurrentRate;
+				List<ProtoPartResourceSnapshot> relevantStorage = storage[d.resourceName];
+				for (int i = 0; i < relevantStorage.Count; ++i) {
+					ProtoPartResourceSnapshot r = relevantStorage[i];
+
 					if (amount == 0) {break;}
 
-					// add/remove amount to/from PPRS and reduce amount to zero appropriately
-					// ConfigNode bullshit expected
+					float n;
+					float m;
+
+					Debug.Log("BackgroundProcessing: Parsing out resource values");
+
+					if (
+						float.TryParse(r.resourceValues.GetValue("amount"), out n) &&
+						float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
+					) {
+						Debug.Log("BackgroundProcessing: Adding " + amount + " " + d.resourceName + " to storage");
+						Debug.Log("BackgroundProcessing: Storage currently contains " + n + "/" + m);
+						n += amount;
+
+						if (amount < 0) {
+							if (n < 0 && i < relevantStorage.Count - 1) {
+								amount += n;
+								n = 0;
+							}
+						}
+						else {
+							if (n > m && i < relevantStorage.Count - 1) {
+								amount += n - m;
+								n = m;
+							}
+						}
+					}
+
+					modified.Add(r);
+				};
+			}
+
+			foreach (ProtoPartResourceSnapshot r in modified) {
+				float n;
+				float m;
+
+				if (
+					float.TryParse(r.resourceValues.GetValue("amount"), out n) &&
+					float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
+				) {
+					n = Mathf.Clamp(n, 0, m);
+					r.resourceValues.SetValue("amount", n.ToString());
 				}
 			}
 		}
