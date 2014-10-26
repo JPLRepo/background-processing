@@ -72,16 +72,18 @@ namespace BackgroundProcessing {
 			DontDestroyOnLoad(this);
 
 			ResourceModuleData d = new ResourceModuleData();
-			d.resourceAmount = 0.75f;
+			d.resourceAmount = 0.75f * TimeWarp.fixedDeltaTime;
 			d.resourceName = "ElectricCharge";
 
 			resourceData.Add("ModuleGenerator", d);
 		}
 
 		private void HandleResources(Vessel v) {
+			VesselData data = vesselData[v];
+
+			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
 			Debug.Log("BackgroundProcessing: HandleResources on " + v.vesselName);
 
-			VesselData data = vesselData[v];
 			Dictionary<String, List<ProtoPartResourceSnapshot>> storage = new Dictionary<String, List<ProtoPartResourceSnapshot>>();
 
 			// Save this in the vesseldata structure, maybe. It can change if loaded and unpacked, though, so have to invalidate
@@ -117,6 +119,7 @@ namespace BackgroundProcessing {
 						Debug.Log("BackgroundProcessing: Adding " + amount + " " + d.resourceName + " to storage");
 						Debug.Log("BackgroundProcessing: Storage currently contains " + n + "/" + m);
 						n += amount;
+						amount = 0;
 
 						if (amount < 0) {
 							if (n < 0 && i < relevantStorage.Count - 1) {
@@ -130,6 +133,9 @@ namespace BackgroundProcessing {
 								n = m;
 							}
 						}
+
+						r.resourceValues.SetValue("amount", n.ToString());
+						Debug.Log("BackgroundProcessing: Storage afterwards contains " + n + "/" + m);
 					}
 
 					modified.Add(r);
@@ -145,6 +151,7 @@ namespace BackgroundProcessing {
 					float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
 				) {
 					n = Mathf.Clamp(n, 0, m);
+					Debug.Log("BackgroundProcessing: Setting storage to " + n + "/" + m);
 					r.resourceValues.SetValue("amount", n.ToString());
 				}
 			}
