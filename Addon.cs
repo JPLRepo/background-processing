@@ -6,7 +6,6 @@ using UnityEngine;
 namespace BackgroundProcessing {
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class Addon : MonoBehaviour {
-
 		public delegate void BackgroundUpdate(Vessel v, uint partFlightID);
 
 		static public Addon Instance { get; private set; }
@@ -15,6 +14,16 @@ namespace BackgroundProcessing {
 		private Dictionary<string, BackgroundUpdate> moduleHandlers = new Dictionary<string, BackgroundUpdate>();
 		private Dictionary<string, List<ResourceModuleData>> resourceData = new Dictionary<string, List<ResourceModuleData>>();
 		private HashSet<string> interestingResources = new HashSet<string>();
+
+		private class ResourceModuleData {
+			public string resourceName { get; private set; }
+			public float resourceRate { get; private set; }
+
+			public ResourceModuleData(string rn = "", float rr = 0) {
+				resourceName = rn;
+				resourceRate = rr;
+			}
+		}
 
 		private struct CallbackPair {
 			public string moduleName;
