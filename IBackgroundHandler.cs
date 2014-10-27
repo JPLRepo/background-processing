@@ -1,5 +1,5 @@
 ﻿namespace BackgroundProcessing {
-	public interface IBackgroundHandler {
+	public interface IBackgroundModule {
 		void FixedBackgroundUpdate(Vessel v, uint partFlightID);
 	}
 }
