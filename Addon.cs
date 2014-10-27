@@ -87,6 +87,7 @@ namespace BackgroundProcessing {
 			VesselData ret = new VesselData();
 
 			foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
+				// Figure out enabled/disabled status. Same ordering as ProtoPartModuleSnapshot list?
 				foreach (PartModule m in PartLoader.getPartInfoByName(p.partName).partPrefab.Modules) {
 					if (moduleHandlers.ContainsKey(m.moduleName)) {
 						ret.callbacks.Add(new CallbackPair(m.moduleName, p.flightID));
@@ -112,28 +113,32 @@ namespace BackgroundProcessing {
 
 			interestingResources.Add("ElectricCharge");
 
-			foreach (PartModule m in Resources.FindObjectsOfTypeAll<PartModule>()) {
-				MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] {typeof(Vessel), typeof(uint)}, null);
-				if (fbu != null) {moduleHandlers.Add(m.moduleName, (BackgroundUpdate)Delegate.CreateDelegate(typeof(BackgroundUpdate), fbu));}
+			foreach (AvailablePart a in PartLoader.LoadedPartsList) {
+				if (a.partPrefab.Modules != null) {
+					foreach (PartModule m in a.partPrefab.Modules) {
+						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint) }, null);
+						if (fbu != null) { moduleHandlers.Add(m.moduleName, (BackgroundUpdate)Delegate.CreateDelegate(typeof(BackgroundUpdate), fbu)); }
 
-				MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
-				if (ir != null && ir.ReturnType == typeof(List<string>)) {
-					interestingResources.UnionWith((List<String>)ir.Invoke(null, null));
-				}
+						MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+						if (ir != null && ir.ReturnType == typeof(List<string>)) {
+							interestingResources.UnionWith((List<String>)ir.Invoke(null, null));
+						}
 
-				MethodInfo prc = m.GetType().GetMethod("GetBackgroundResourceCount", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
-				MethodInfo pr = m.GetType().GetMethod("GetBackgroundResource", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(int), typeof(string).MakeByRefType(), typeof(float).MakeByRefType() }, null);
-				if (prc != null && pr != null && prc.ReturnType == typeof(int)) {
-					System.Object[] resourceParams = new System.Object[3];
-					resourceParams[1] = "";
-					resourceParams[2] = 0.0f;
+						MethodInfo prc = m.GetType().GetMethod("GetBackgroundResourceCount", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+						MethodInfo pr = m.GetType().GetMethod("GetBackgroundResource", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(int), typeof(string).MakeByRefType(), typeof(float).MakeByRefType() }, null);
+						if (prc != null && pr != null && prc.ReturnType == typeof(int)) {
+							System.Object[] resourceParams = new System.Object[3];
+							resourceParams[1] = "";
+							resourceParams[2] = 0.0f;
 
-					for (int count = (int)prc.Invoke(null, null); count > 0; --count) {
-						resourceParams[0] = count;
-						pr.Invoke(null, resourceParams);
+							for (int count = (int)prc.Invoke(null, null); count > 0; --count) {
+								resourceParams[0] = count;
+								pr.Invoke(null, resourceParams);
 
-						if (!resourceData.ContainsKey(m.moduleName)) { resourceData.Add(m.moduleName, new List<ResourceModuleData>()); }
-						resourceData[m.moduleName].Add(new ResourceModuleData((string)resourceParams[1], (float)resourceParams[2]));
+								if (!resourceData.ContainsKey(m.moduleName)) { resourceData.Add(m.moduleName, new List<ResourceModuleData>()); }
+								resourceData[m.moduleName].Add(new ResourceModuleData((string)resourceParams[1], (float)resourceParams[2]));
+							}
+						}
 					}
 				}
 			}
@@ -209,20 +214,21 @@ namespace BackgroundProcessing {
 				vessels.Remove(FlightGlobals.ActiveVessel);
 
 				foreach (Vessel v in vessels) {
-					if (!vesselData.ContainsKey(v)) {
-						if (!CanGetVesselData(v)) {continue;}
-
-						vesselData.Add(v, GetVesselData(v));
-					}
-
 					if (v.situation != Vessel.Situations.PRELAUNCH) {
-						if (!v.loaded) {HandleResources(v);}
-
 						if (!v.loaded || v.packed) {
+							if (!vesselData.ContainsKey(v)) {
+								if (!CanGetVesselData(v)) { continue; }
+
+								vesselData.Add(v, GetVesselData(v));
+							}
+
+							if (!v.loaded) { HandleResources(v); }
+
 							foreach (CallbackPair p in vesselData[v].callbacks) {
 								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID);
 							}
 						}
+						else {vesselData.Remove(v);}
 					}
 				}
 			}
