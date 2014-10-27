@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System;
+using System.Reflection;
 using UnityEngine;
 
 namespace BackgroundProcessing {
@@ -11,15 +12,15 @@ namespace BackgroundProcessing {
 		static public Addon Instance { get; private set; }
 
 		private Dictionary<Vessel, VesselData> vesselData = new Dictionary<Vessel, VesselData>();
-		private Dictionary<String, BackgroundUpdate> moduleHandlers = new Dictionary<String, BackgroundUpdate>();
-		private Dictionary<String, List<ResourceModuleData>> resourceData = new Dictionary<String, List<ResourceModuleData>>();
-		private HashSet<String> interestingResources = new HashSet<String>();
+		private Dictionary<string, BackgroundUpdate> moduleHandlers = new Dictionary<string, BackgroundUpdate>();
+		private Dictionary<string, List<ResourceModuleData>> resourceData = new Dictionary<string, List<ResourceModuleData>>();
+		private HashSet<string> interestingResources = new HashSet<string>();
 
 		private struct CallbackPair {
-			public String moduleName;
+			public string moduleName;
 			public uint partFlightID;
 
-			public CallbackPair(String m, uint i) {
+			public CallbackPair(string m, uint i) {
 				moduleName = m;
 				partFlightID = i;
 			}
@@ -102,21 +103,28 @@ namespace BackgroundProcessing {
 
 			interestingResources.Add("ElectricCharge");
 
-			foreach (AvailablePart p in PartLoader.LoadedPartsList) {
-				foreach (PartModule m in p.partPrefab.Modules) {
-					IBackgroundModule bm = m as IBackgroundModule;
-					if (bm != null) {moduleHandlers.Add(m.moduleName, bm.FixedBackgroundUpdate);}
+			foreach (PartModule m in Resources.FindObjectsOfTypeAll<PartModule>()) {
+				MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] {typeof(Vessel), typeof(uint)}, null);
+				if (fbu != null) {moduleHandlers.Add(m.moduleName, (BackgroundUpdate)Delegate.CreateDelegate(typeof(BackgroundUpdate), fbu));}
 
-					IBackgroundResourceModule rm = m as IBackgroundResourceModule;
-					if(rm != null) {
-						List<String> ir;
-						List<ResourceModuleData> rd;
+				MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+				if (ir != null && ir.ReturnType == typeof(List<string>)) {
+					interestingResources.UnionWith((List<String>)ir.Invoke(null, null));
+				}
 
-						rm.GetResourceInfo(out ir, out rd);
-						interestingResources.UnionWith(ir);
+				MethodInfo prc = m.GetType().GetMethod("GetBackgroundResourceCount", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+				MethodInfo pr = m.GetType().GetMethod("GetBackgroundResource", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(int), typeof(string).MakeByRefType(), typeof(float).MakeByRefType() }, null);
+				if (prc != null && pr != null && prc.ReturnType == typeof(int)) {
+					System.Object[] resourceParams = new System.Object[3];
+					resourceParams[1] = "";
+					resourceParams[2] = 0.0f;
+
+					for (int count = (int)prc.Invoke(null, null); count > 0; --count) {
+						resourceParams[0] = count;
+						pr.Invoke(null, resourceParams);
 
 						if (!resourceData.ContainsKey(m.moduleName)) { resourceData.Add(m.moduleName, new List<ResourceModuleData>()); }
-						resourceData[m.moduleName].AddRange(rd);
+						resourceData[m.moduleName].Add(new ResourceModuleData((string)resourceParams[1], (float)resourceParams[2]));
 					}
 				}
 			}
@@ -126,7 +134,7 @@ namespace BackgroundProcessing {
 			VesselData data = vesselData[v];
 			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
 
-			Dictionary<String, List<ProtoPartResourceSnapshot>> storage = new Dictionary<String, List<ProtoPartResourceSnapshot>>();
+			Dictionary<string, List<ProtoPartResourceSnapshot>> storage = new Dictionary<string, List<ProtoPartResourceSnapshot>>();
 
 			// Save this in the vesseldata structure, maybe. It can change if loaded and unpacked, though, so have to invalidate
 			// on unpack/revalidate on pack.
@@ -174,7 +182,6 @@ namespace BackgroundProcessing {
 					float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
 				) {
 					n = Mathf.Clamp(n, 0, m);
-					Debug.Log("BackgroundProcessing: Setting storage to " + n + "/" + m);
 					r.resourceValues.SetValue("amount", n.ToString());
 				}
 			}
