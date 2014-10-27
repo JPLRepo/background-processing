@@ -42,6 +42,12 @@ namespace BackgroundProcessing {
 
 		private bool HasResourceGenerationData(PartModule m) {
 			if (m.moduleName == "ModuleDeployableSolarPanel") { return true; }
+			if (m.moduleName == "ModuleCommand") {
+				ModuleCommand c = (ModuleCommand)m;
+				foreach (ModuleResource mr in c.inputResources) {
+					if (interestingResources.Contains(mr.name)) { return true; }
+				}
+			}
 
 			if (m.moduleName == "ModuleGenerator") {
 				ModuleGenerator g = (ModuleGenerator)m;
@@ -75,6 +81,15 @@ namespace BackgroundProcessing {
 				ModuleDeployableSolarPanel p = (ModuleDeployableSolarPanel)m;
 				if (interestingResources.Contains(p.resourceName)) {
 					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate));
+				}
+			}
+
+			if (m.moduleName == "ModuleCommand") {
+				ModuleCommand c = (ModuleCommand)m;
+				foreach (ModuleResource mr in c.inputResources) {
+					if (interestingResources.Contains(mr.name)) {
+						ret.Add(new ResourceModuleData(mr.name, (float)-mr.rate));
+					}
 				}
 			}
 
