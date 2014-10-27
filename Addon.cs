@@ -18,7 +18,7 @@ namespace BackgroundProcessing {
 		// Need to load into this somehow (config file)
 		// Also module name isn't sufficient to identify resource use (ModuleGenerator). Part name? Seems inelegant, doesn't scale.
 		// Special case ModuleGenerator? What if there are others? Are there others? Also inelegant.
-		private Dictionary<String, ResourceModuleData> resourceData = new Dictionary<String, ResourceModuleData>();
+		private Dictionary<String, ResourceModuleConfigData> resourceData = new Dictionary<String, ResourceModuleConfigData>();
 
 		private struct CallbackPair {
 			public String moduleName;
@@ -30,6 +30,58 @@ namespace BackgroundProcessing {
 			}
 		};
 
+		private class ConfigNodePath {
+			public List<String> nodeNames { get; private set; }
+			public String valueName { get; private set; }
+
+			public ConfigNodePath(String p) {
+				String[] vals = p.Split('.');
+
+				nodeNames = new List<String>(p.Split('.'));
+				if (nodeNames.Count > 0) {
+					valueName = nodeNames[nodeNames.Count - 1];
+					nodeNames.RemoveAt(nodeNames.Count - 1);
+				}
+			}
+
+			public String apply(ConfigNode n) {
+				if (nodeNames != null) {
+					foreach (String s in nodeNames) {
+						if (n == null) { break; }
+						n = n.GetNode(s);
+					}
+				}
+
+				if (n == null) { return ""; }
+
+				return n.GetValue(valueName);
+			}
+		}
+
+		private class ResourceModuleConfigData {
+			public ConfigNodePath ratePath {get; private set;}
+
+			public ConfigNodePath relevantPath {get; private set;}
+			public String relevantValue {get; private set;}
+
+			public float rate {get; private set;}
+			public String resourceName {get; private set;}
+
+			public ResourceModuleConfigData(ConfigNode n) {
+				rate = 0;
+				relevantValue = "";
+				resourceName = "";
+
+				if (n.HasValue("rate")) { float t; float.TryParse(n.GetValue("rate"), out t); rate = t * TimeWarp.fixedDeltaTime; }
+
+				if (n.HasValue("resourceName")) { resourceName = n.GetValue("resourceName"); }
+				if (n.HasValue("relevantValue")) { relevantValue = n.GetValue("relevantValue"); }
+
+				if (n.HasValue("ratePath")) { ratePath = new ConfigNodePath(n.GetValue("ratePath")); }
+				if (n.HasValue("relevantPath")) { relevantPath = new ConfigNodePath(n.GetValue("relevantPath")); }
+			}
+		}
+
 		private class ResourceModuleData {
 			public String resourceName = "";
 			public float resourceAmount = 0;
@@ -38,6 +90,34 @@ namespace BackgroundProcessing {
 		private class VesselData {
 			public List<CallbackPair> callbacks = new List<CallbackPair>();
 			public List<ResourceModuleData> resourceModules = new List<ResourceModuleData>();
+		}
+
+		private bool HasResourceData(ProtoPartSnapshot p, ProtoPartModuleSnapshot m) {
+			if (!resourceData.ContainsKey(m.moduleName)) { return false; }
+
+			Debug.Log("BackgroundProcessing: HasResourceData called on module " + m.moduleName);
+			Debug.Log("BackgroundProcessing: " + m.moduleValues);
+
+			Debug.Log("BackgroundProcessing: " + p.customPartData);
+
+			// Where the FUCK is ModuleGenerator persistence info?
+
+			ResourceModuleConfigData cd = resourceData[m.moduleName];
+			return cd.relevantPath != null && cd.relevantPath.apply(m.moduleValues) == cd.relevantValue;
+		}
+
+		private ResourceModuleData GetResourceData(ProtoPartModuleSnapshot m) {
+			ResourceModuleConfigData cd = resourceData[m.moduleName];
+			ResourceModuleData ret = new ResourceModuleData();
+
+			ret.resourceName = cd.resourceName;
+			ret.resourceAmount = cd.rate;
+
+			if (cd.ratePath != null) {
+				float.TryParse(cd.ratePath.apply(m.moduleValues), out ret.resourceAmount);
+			}
+
+			return ret;
 		}
 
 		private VesselData GetVesselData(Vessel v)
@@ -50,7 +130,7 @@ namespace BackgroundProcessing {
 						ret.callbacks.Add(new CallbackPair(m.moduleName, p.flightID));
 					}
 
-					if (resourceData.ContainsKey(m.moduleName)) { ret.resourceModules.Add(resourceData[m.moduleName]); }
+					if (HasResourceData(p, m)) { ret.resourceModules.Add(GetResourceData(m)); }
 				}
 			}
 
@@ -71,9 +151,13 @@ namespace BackgroundProcessing {
 		public void Start() {
 			DontDestroyOnLoad(this);
 
-			ResourceModuleData d = new ResourceModuleData();
-			d.resourceAmount = 0.75f * TimeWarp.fixedDeltaTime;
-			d.resourceName = "ElectricCharge";
+			ConfigNode temp = new ConfigNode();
+			temp.AddValue("ratePath", "OUTPUT_RESOURCE.rate");
+			temp.AddValue("relevantPath", "OUTPUT_RESOURCE.name");
+			temp.AddValue("relevantValue", "ElectricCharge");
+			temp.AddValue("resourceName", "ElectricCharge");
+
+			ResourceModuleConfigData d = new ResourceModuleConfigData(temp);
 
 			resourceData.Add("ModuleGenerator", d);
 		}
