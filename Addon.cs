@@ -50,10 +50,12 @@ namespace BackgroundProcessing {
 			public string resourceName { get; private set; }
 			public float resourceRate { get; private set; }
 			public FloatCurve powerCurve { get; private set; }
+			public Vector3d position { get; private set; }
 
-			public ResourceModuleData(string rn = "", float rr = 0, FloatCurve pc = null) {
+			public ResourceModuleData(string rn = "", float rr = 0, Vector3d pos = new Vector3d(), FloatCurve pc = null) {
 				resourceName = rn;
 				resourceRate = rr;
+				position = pos;
 				powerCurve = pc;
 			}
 		}
@@ -102,7 +104,7 @@ namespace BackgroundProcessing {
 			return resourceData.ContainsKey(m.moduleName);
 		}
 
-		private List<ResourceModuleData> GetResourceGenerationData(PartModule m, ProtoPartModuleSnapshot s) {
+		private List<ResourceModuleData> GetResourceGenerationData(PartModule m, ProtoPartSnapshot part) {
 			List<ResourceModuleData> ret = new List<ResourceModuleData>();
 
 			if (m.moduleName == "ModuleGenerator") {
@@ -122,7 +124,7 @@ namespace BackgroundProcessing {
 				ModuleDeployableSolarPanel p = (ModuleDeployableSolarPanel)m;
 
 				if (interestingResources.Contains(p.resourceName)) {
-					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, p.powerCurve));
+					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, part.position, p.powerCurve));
 				}
 			}
 
@@ -152,7 +154,7 @@ namespace BackgroundProcessing {
 								ret.callbacks.Add(new CallbackPair(partModuleList[i].moduleName, p.flightID));
 							}
 
-							if (HasResourceGenerationData(partModuleList[i], p.modules[i])) { ret.resourceModules.AddRange(GetResourceGenerationData(partModuleList[i], p.modules[i])); }
+							if (HasResourceGenerationData(partModuleList[i], p.modules[i])) { ret.resourceModules.AddRange(GetResourceGenerationData(partModuleList[i], p)); }
 						}
 						else {Debug.LogError("BackgroundProcessing: PartModule/ProtoPartModuleSnapshot sync error processing part " + p.partName + ". Something is very wrong.");}
 					}
@@ -291,10 +293,11 @@ namespace BackgroundProcessing {
 				else {
 					CelestialBody kerbol = FlightGlobals.Bodies[0];
 					RaycastHit hitInfo;
-					bool hit = Physics.Raycast(v.GetWorldPos3D(), kerbol.position - v.GetWorldPos3D(), out hitInfo);
+					Vector3d partPos = v.GetWorldPos3D() + d.position;
+					bool hit = Physics.Raycast(v.GetWorldPos3D(), kerbol.position - partPos, out hitInfo);
 
 					if (!hit || hitInfo.collider.gameObject == kerbol) {
-						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * d.powerCurve.Evaluate((float)kerbol.GetAltitude(v.GetWorldPos3D())), d.resourceName, modified);
+						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * d.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
 					}
 				}
 			}
