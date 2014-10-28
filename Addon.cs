@@ -5,7 +5,8 @@ using UnityEngine;
 
 namespace BackgroundProcessing {
 	using ResourceRequestFunc = Func<Vessel, float, string, float>;
-	using BackgroundUpdateFunc = Action<Vessel, uint, Func<Vessel, float, string, float>>;
+	using BackgroundUpdateResourceFunc = Action<Vessel, uint, Func<Vessel, float, string, float>>;
+	using BackgroundUpdateFunc = Action<Vessel, uint>;
 
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class Addon : MonoBehaviour {
@@ -22,8 +23,26 @@ namespace BackgroundProcessing {
 
 		static public Addon Instance { get; private set; }
 
+		class UpdateHelper {
+			private BackgroundUpdateResourceFunc resourceFunc = null;
+			private BackgroundUpdateFunc updateFunc = null;
+
+			public UpdateHelper(BackgroundUpdateResourceFunc rf) {
+				resourceFunc = rf;
+			}
+
+			public UpdateHelper(BackgroundUpdateFunc f) {
+				updateFunc = f;
+			}
+
+			public void Invoke(Vessel v, uint id, ResourceRequestFunc r) {
+				if (resourceFunc == null) { }
+				else { resourceFunc.Invoke(v, id, r); }
+			}
+		}
+
 		private Dictionary<Vessel, VesselData> vesselData = new Dictionary<Vessel, VesselData>();
-		private Dictionary<string, BackgroundUpdateFunc> moduleHandlers = new Dictionary<string, BackgroundUpdateFunc>();
+		private Dictionary<string, UpdateHelper> moduleHandlers = new Dictionary<string, UpdateHelper>();
 		private Dictionary<string, List<ResourceModuleData>> resourceData = new Dictionary<string, List<ResourceModuleData>>();
 		private HashSet<string> interestingResources = new HashSet<string>();
 
@@ -150,8 +169,15 @@ namespace BackgroundProcessing {
 			foreach (AvailablePart a in PartLoader.LoadedPartsList) {
 				if (a.partPrefab.Modules != null) {
 					foreach (PartModule m in a.partPrefab.Modules) {
-						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
-						if (fbu != null) { moduleHandlers.Add(m.moduleName, (BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu)); }
+						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint)}, null);
+						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
+						if (fbur != null) { moduleHandlers.Add(m.moduleName, new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur))); }
+						else {
+							if (fbu != null) { moduleHandlers.Add(m.moduleName, new UpdateHelper((BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu))); }
+						}
+
+						
+						
 
 						MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
 						if (ir != null && ir.ReturnType == typeof(List<string>)) {
