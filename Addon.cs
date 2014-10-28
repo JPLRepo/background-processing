@@ -146,29 +146,22 @@ namespace BackgroundProcessing {
 			VesselData ret = new VesselData();
 
 			foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
-				PartModuleList partModuleList = PartLoader.getPartInfoByName(p.partName).partPrefab.Modules;
-				if (partModuleList.Count == p.modules.Count) {
-					for (int i = 0; i < partModuleList.Count; ++i) {
-						if (partModuleList[i].moduleName == p.modules[i].moduleName) {
-							if (moduleHandlers.ContainsKey(partModuleList[i].moduleName)) {
-								ret.callbacks.Add(new CallbackPair(partModuleList[i].moduleName, p.flightID));
-							}
+				Part part = PartLoader.getPartInfoByName(p.partName).partPrefab;
+				if (part != null) {
+					PartModuleList partModuleList = part.Modules;
+					if (partModuleList != null && p.modules != null && partModuleList.Count == p.modules.Count) {
+						for (int i = 0; i < partModuleList.Count; ++i) {
+							if (partModuleList[i].moduleName == p.modules[i].moduleName) {
+								if (moduleHandlers.ContainsKey(partModuleList[i].moduleName)) {
+									ret.callbacks.Add(new CallbackPair(partModuleList[i].moduleName, p.flightID));
+								}
 
-							if (HasResourceGenerationData(partModuleList[i], p.modules[i])) { ret.resourceModules.AddRange(GetResourceGenerationData(partModuleList[i], p)); }
+								if (HasResourceGenerationData(partModuleList[i], p.modules[i])) { ret.resourceModules.AddRange(GetResourceGenerationData(partModuleList[i], p)); }
+							}
+							else { Debug.LogError("BackgroundProcessing: PartModule/ProtoPartModuleSnapshot sync error processing part " + p.partName + ". Something is very wrong."); }
 						}
-						else {Debug.LogError("BackgroundProcessing: PartModule/ProtoPartModuleSnapshot sync error processing part " + p.partName + ". Something is very wrong.");}
 					}
 				}
-
-				/*
-				// Figure out enabled/disabled status. Same ordering as ProtoPartModuleSnapshot list?
-				foreach (PartModule m in PartLoader.getPartInfoByName(p.partName).partPrefab.Modules) {
-					if (moduleHandlers.ContainsKey(m.moduleName)) {
-						ret.callbacks.Add(new CallbackPair(m.moduleName, p.flightID));
-					}
-
-					if (HasResourceGenerationData(m)) { ret.resourceModules.AddRange(GetResourceGenerationData(m)); }
-				}*/
 
 				foreach (ProtoPartResourceSnapshot r in p.resources) {
 					if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
