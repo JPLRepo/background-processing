@@ -4,14 +4,26 @@ using System.Reflection;
 using UnityEngine;
 
 namespace BackgroundProcessing {
+	using ResourceRequestFunc = Func<Vessel, float, string, float>;
+	using BackgroundUpdateFunc = Action<Vessel, uint, Func<Vessel, float, string, float>>;
+
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class Addon : MonoBehaviour {
-		public delegate void BackgroundUpdate(Vessel v, uint partFlightID);
+		public float RequestBackgroundResource(Vessel vessel, float amount, string resource) {
+			if (!vesselData.ContainsKey(vessel)) { return 0f; }
+
+			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
+
+			AddResource(vesselData[vessel], -amount, resource, modified);
+			float ret = ClampResource(modified);
+
+			return amount - ret;
+		}
 
 		static public Addon Instance { get; private set; }
 
 		private Dictionary<Vessel, VesselData> vesselData = new Dictionary<Vessel, VesselData>();
-		private Dictionary<string, BackgroundUpdate> moduleHandlers = new Dictionary<string, BackgroundUpdate>();
+		private Dictionary<string, BackgroundUpdateFunc> moduleHandlers = new Dictionary<string, BackgroundUpdateFunc>();
 		private Dictionary<string, List<ResourceModuleData>> resourceData = new Dictionary<string, List<ResourceModuleData>>();
 		private HashSet<string> interestingResources = new HashSet<string>();
 
@@ -38,6 +50,7 @@ namespace BackgroundProcessing {
 		private class VesselData {
 			public List<CallbackPair> callbacks = new List<CallbackPair>();
 			public List<ResourceModuleData> resourceModules = new List<ResourceModuleData>();
+			public Dictionary<string, List<ProtoPartResourceSnapshot>> storage = new Dictionary<string, List<ProtoPartResourceSnapshot>>();
 		}
 
 		private bool HasResourceGenerationData(PartModule m) {
@@ -111,6 +124,11 @@ namespace BackgroundProcessing {
 
 					if (HasResourceGenerationData(m)) { ret.resourceModules.AddRange(GetResourceGenerationData(m)); }
 				}
+
+				foreach (ProtoPartResourceSnapshot r in p.resources) {
+					if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
+					ret.storage[r.resourceName].Add(r);
+				}
 			}
 
 			return ret;
@@ -132,8 +150,8 @@ namespace BackgroundProcessing {
 			foreach (AvailablePart a in PartLoader.LoadedPartsList) {
 				if (a.partPrefab.Modules != null) {
 					foreach (PartModule m in a.partPrefab.Modules) {
-						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint) }, null);
-						if (fbu != null) { moduleHandlers.Add(m.moduleName, (BackgroundUpdate)Delegate.CreateDelegate(typeof(BackgroundUpdate), fbu)); }
+						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
+						if (fbu != null) { moduleHandlers.Add(m.moduleName, (BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu)); }
 
 						MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
 						if (ir != null && ir.ReturnType == typeof(List<string>)) {
@@ -160,61 +178,67 @@ namespace BackgroundProcessing {
 			}
 		}
 
-		private void HandleResources(Vessel v) {
-			VesselData data = vesselData[v];
-			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
+		private HashSet<ProtoPartResourceSnapshot> AddResource(VesselData data, float amount, string name, HashSet<ProtoPartResourceSnapshot> modified) {
+			if (!data.storage.ContainsKey(name)) { return modified; }
 
-			Dictionary<string, List<ProtoPartResourceSnapshot>> storage = new Dictionary<string, List<ProtoPartResourceSnapshot>>();
+			bool reduce = amount < 0;
 
-			// Save this in the vesseldata structure, maybe. It can change if loaded and unpacked, though, so have to invalidate
-			// on unpack/revalidate on pack.
-			foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
-				foreach (ProtoPartResourceSnapshot r in p.resources) {
-					if (!storage.ContainsKey(r.resourceName)) { storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
-					storage[r.resourceName].Add(r);
-				}
-			}
+			List<ProtoPartResourceSnapshot> relevantStorage = data.storage[name];
+			for (int i = 0; i < relevantStorage.Count; ++i) {
+				ProtoPartResourceSnapshot r = relevantStorage[i];
 
-			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
-
-			foreach (ResourceModuleData d in data.resourceModules) {
-				if (!storage.ContainsKey(d.resourceName)) {continue;}
-
-				float amount = d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime;
-				List<ProtoPartResourceSnapshot> relevantStorage = storage[d.resourceName];
-				for (int i = 0; i < relevantStorage.Count; ++i) {
-					ProtoPartResourceSnapshot r = relevantStorage[i];
-
-					if (amount == 0) {break;}
-					float n; float m;
-
-					if (
-						float.TryParse(r.resourceValues.GetValue("amount"), out n) &&
-						float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
-					) {
-						n += amount;
-
-						if (amount < 0) { if (n < 0 && i < relevantStorage.Count - 1) {amount = n; n = 0; } }
-						else { if (n > m && i < relevantStorage.Count - 1) {amount = n - m; n = m;} }
-
-						r.resourceValues.SetValue("amount", n.ToString());
-					}
-
-					modified.Add(r);
-				};
-			}
-
-			foreach (ProtoPartResourceSnapshot r in modified) {
+				if (amount == 0) { break; }
 				float n; float m;
 
 				if (
 					float.TryParse(r.resourceValues.GetValue("amount"), out n) &&
 					float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
 				) {
-					n = Mathf.Clamp(n, 0, m);
+					n += amount; amount = 0;
+
+					if (reduce) {if (n < 0 && i < relevantStorage.Count - 1) { amount = n; n = 0; }}
+					else { if (n > m && i < relevantStorage.Count - 1) { amount = n - m; n = m; } }
+
+					r.resourceValues.SetValue("amount", n.ToString());
+				}
+
+				modified.Add(r);
+			}
+
+			return modified;
+		}
+
+		private float ClampResource(HashSet<ProtoPartResourceSnapshot> modified) {
+			float ret = 0;
+			foreach (ProtoPartResourceSnapshot r in modified) {
+				float n; float m; float i;
+
+				if (
+					float.TryParse(r.resourceValues.GetValue("amount"), out n) &&
+					float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
+				) {
+					i = Mathf.Clamp(n, 0, m);
+					ret += i - n;
+					n = i;
+
 					r.resourceValues.SetValue("amount", n.ToString());
 				}
 			}
+
+			return ret;
+		}
+
+		private void HandleResources(Vessel v) {
+			VesselData data = vesselData[v];
+			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
+
+			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
+
+			foreach (ResourceModuleData d in data.resourceModules) {
+				AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
+			}
+
+			ClampResource(modified);
 		}
 
 		/* Progression: Unloaded/packed -> loaded/packed -> loaded/unpacked -> active vessel
@@ -241,7 +265,7 @@ namespace BackgroundProcessing {
 							if (!v.loaded) { HandleResources(v); }
 
 							foreach (CallbackPair p in vesselData[v].callbacks) {
-								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID);
+								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource);
 							}
 						}
 						else {vesselData.Remove(v);}
