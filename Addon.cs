@@ -46,17 +46,33 @@ namespace BackgroundProcessing {
 		private Dictionary<string, List<ResourceModuleData>> resourceData = new Dictionary<string, List<ResourceModuleData>>();
 		private HashSet<string> interestingResources = new HashSet<string>();
 
+		private class SolarPanelData {
+			public FloatCurve powerCurve { get; private set; }
+			public Vector3d position { get; private set; }
+			public Quaternion orientation { get; private set; }
+			public Vector3d solarNormal {get; private set;}
+			public Vector3d pivotAxis { get; private set; }
+			public bool tracks { get; private set; }
+
+			public SolarPanelData(FloatCurve pc, Vector3d p, Quaternion o, Vector3d sn, Vector3d pa, bool t) {
+				powerCurve = pc;
+				position = p;
+				orientation = o;
+				solarNormal = sn;
+				pivotAxis = pa;
+				tracks = t;
+			}
+		}
+
 		private class ResourceModuleData {
 			public string resourceName { get; private set; }
 			public float resourceRate { get; private set; }
-			public FloatCurve powerCurve { get; private set; }
-			public Vector3d position { get; private set; }
+			public SolarPanelData panelData {get; private set;}
 
-			public ResourceModuleData(string rn = "", float rr = 0, Vector3d pos = new Vector3d(), FloatCurve pc = null) {
+			public ResourceModuleData(string rn = "", float rr = 0, SolarPanelData panel = null) {				
 				resourceName = rn;
 				resourceRate = rr;
-				position = pos;
-				powerCurve = pc;
+				panelData = panel;
 			}
 		}
 
@@ -120,11 +136,13 @@ namespace BackgroundProcessing {
 			}
 
 			if (m.moduleName == "ModuleDeployableSolarPanel") {
-				// Figure out power curve later.
 				ModuleDeployableSolarPanel p = (ModuleDeployableSolarPanel)m;
 
 				if (interestingResources.Contains(p.resourceName)) {
-					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, part.position, p.powerCurve));
+					Transform panel = p.part.FindModelComponent<Transform>(p.raycastTransformName);
+					Transform pivot = p.part.FindModelComponent<Transform>(p.pivotName);
+
+					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, new SolarPanelData(p.powerCurve, part.position, part.rotation, panel.forward, pivot.up, p.sunTracking)));
 				}
 			}
 
@@ -194,9 +212,6 @@ namespace BackgroundProcessing {
 						else {
 							if (fbu != null) { moduleHandlers.Add(m.moduleName, new UpdateHelper((BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu))); }
 						}
-
-						
-						
 
 						MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
 						if (ir != null && ir.ReturnType == typeof(List<string>)) {
@@ -280,17 +295,32 @@ namespace BackgroundProcessing {
 			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
 
 			foreach (ResourceModuleData d in data.resourceModules) {
-				if (d.powerCurve == null) {
+				if (d.panelData == null) {
 					AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
 				}
 				else {
 					CelestialBody kerbol = FlightGlobals.Bodies[0];
 					RaycastHit hitInfo;
-					Vector3d partPos = v.GetWorldPos3D() + d.position;
-					bool hit = Physics.Raycast(v.GetWorldPos3D(), kerbol.position - partPos, out hitInfo);
+					Vector3d partPos = v.GetWorldPos3D() + d.panelData.position;
+					Vector3d kerbolVector = (kerbol.position - partPos).normalized;
+					bool hit = Physics.Raycast(v.GetWorldPos3D(), kerbolVector, out hitInfo);
+
+					float orientationFactor = 1;
+
+					if (d.panelData.tracks) {
+						// This seems to produce harsher results than KSP by a pretty significant margin. Not sure why.
+						Vector3d localPivot = (v.transform.rotation * d.panelData.orientation * d.panelData.pivotAxis).normalized;
+						orientationFactor = 1 - Vector3.Dot(localPivot, kerbolVector);
+					}
+					else {
+						Vector3d localSolarNormal = (v.transform.rotation * d.panelData.orientation * d.panelData.solarNormal).normalized;
+						orientationFactor = Vector3.Dot(localSolarNormal, kerbolVector);
+					}
+
+					orientationFactor = Mathf.Clamp(orientationFactor, 0, 1);
 
 					if (!hit || hitInfo.collider.gameObject == kerbol) {
-						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * d.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
+						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * orientationFactor * d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
 					}
 				}
 			}
