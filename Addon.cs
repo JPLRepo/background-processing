@@ -44,6 +44,7 @@ namespace BackgroundProcessing {
 			if (m.moduleName == "ModuleDeployableSolarPanel") { return true; }
 			if (m.moduleName == "ModuleCommand") {
 				ModuleCommand c = (ModuleCommand)m;
+
 				foreach (ModuleResource mr in c.inputResources) {
 					if (interestingResources.Contains(mr.name)) { return true; }
 				}
@@ -191,10 +192,10 @@ namespace BackgroundProcessing {
 						float.TryParse(r.resourceValues.GetValue("amount"), out n) &&
 						float.TryParse(r.resourceValues.GetValue("maxAmount"), out m)
 					) {
-						n += amount; amount = 0;
+						n += amount;
 
-						if (amount < 0) { if (n < 0 && i < relevantStorage.Count - 1) {amount += n; n = 0;} }
-						else { if (n > m && i < relevantStorage.Count - 1) {amount += n - m; n = m;} }
+						if (amount < 0) { if (n < 0 && i < relevantStorage.Count - 1) {amount = n; n = 0; } }
+						else { if (n > m && i < relevantStorage.Count - 1) {amount = n - m; n = m;} }
 
 						r.resourceValues.SetValue("amount", n.ToString());
 					}
