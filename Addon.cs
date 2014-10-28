@@ -49,10 +49,12 @@ namespace BackgroundProcessing {
 		private class ResourceModuleData {
 			public string resourceName { get; private set; }
 			public float resourceRate { get; private set; }
+			public FloatCurve powerCurve { get; private set; }
 
-			public ResourceModuleData(string rn = "", float rr = 0) {
+			public ResourceModuleData(string rn = "", float rr = 0, FloatCurve pc = null) {
 				resourceName = rn;
 				resourceRate = rr;
+				powerCurve = pc;
 			}
 		}
 
@@ -72,8 +74,12 @@ namespace BackgroundProcessing {
 			public Dictionary<string, List<ProtoPartResourceSnapshot>> storage = new Dictionary<string, List<ProtoPartResourceSnapshot>>();
 		}
 
-		private bool HasResourceGenerationData(PartModule m) {
-			if (m.moduleName == "ModuleDeployableSolarPanel") { return true; }
+		private bool HasResourceGenerationData(PartModule m, ProtoPartModuleSnapshot s) {
+			if (m.moduleName == "ModuleDeployableSolarPanel") {
+				if (s.moduleValues.GetValue("stateString") == ModuleDeployableSolarPanel.panelStates.EXTENDED.ToString()) {
+					return true;
+				}
+			}
 			if (m.moduleName == "ModuleCommand") {
 				ModuleCommand c = (ModuleCommand)m;
 
@@ -83,10 +89,12 @@ namespace BackgroundProcessing {
 			}
 
 			if (m.moduleName == "ModuleGenerator") {
-				ModuleGenerator g = (ModuleGenerator)m;
-				if (g.inputList.Count <= 0) {
-					foreach (ModuleGenerator.GeneratorResource gr in g.outputList) {
-						if (interestingResources.Contains(gr.name)) { return true; }
+				if (s.moduleValues.GetValue("generatorIsActive") == "true") {
+					ModuleGenerator g = (ModuleGenerator)m;
+					if (g.inputList.Count <= 0) {
+						foreach (ModuleGenerator.GeneratorResource gr in g.outputList) {
+							if (interestingResources.Contains(gr.name)) { return true; }
+						}
 					}
 				}
 			}
@@ -94,7 +102,7 @@ namespace BackgroundProcessing {
 			return resourceData.ContainsKey(m.moduleName);
 		}
 
-		private List<ResourceModuleData> GetResourceGenerationData(PartModule m) {
+		private List<ResourceModuleData> GetResourceGenerationData(PartModule m, ProtoPartModuleSnapshot s) {
 			List<ResourceModuleData> ret = new List<ResourceModuleData>();
 
 			if (m.moduleName == "ModuleGenerator") {
@@ -112,8 +120,9 @@ namespace BackgroundProcessing {
 			if (m.moduleName == "ModuleDeployableSolarPanel") {
 				// Figure out power curve later.
 				ModuleDeployableSolarPanel p = (ModuleDeployableSolarPanel)m;
+
 				if (interestingResources.Contains(p.resourceName)) {
-					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate));
+					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, p.powerCurve));
 				}
 			}
 
@@ -135,6 +144,21 @@ namespace BackgroundProcessing {
 			VesselData ret = new VesselData();
 
 			foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
+				PartModuleList partModuleList = PartLoader.getPartInfoByName(p.partName).partPrefab.Modules;
+				if (partModuleList.Count == p.modules.Count) {
+					for (int i = 0; i < partModuleList.Count; ++i) {
+						if (partModuleList[i].moduleName == p.modules[i].moduleName) {
+							if (moduleHandlers.ContainsKey(partModuleList[i].moduleName)) {
+								ret.callbacks.Add(new CallbackPair(partModuleList[i].moduleName, p.flightID));
+							}
+
+							if (HasResourceGenerationData(partModuleList[i], p.modules[i])) { ret.resourceModules.AddRange(GetResourceGenerationData(partModuleList[i], p.modules[i])); }
+						}
+						else {Debug.LogError("BackgroundProcessing: PartModule/ProtoPartModuleSnapshot sync error processing part " + p.partName + ". Something is very wrong.");}
+					}
+				}
+
+				/*
 				// Figure out enabled/disabled status. Same ordering as ProtoPartModuleSnapshot list?
 				foreach (PartModule m in PartLoader.getPartInfoByName(p.partName).partPrefab.Modules) {
 					if (moduleHandlers.ContainsKey(m.moduleName)) {
@@ -142,7 +166,7 @@ namespace BackgroundProcessing {
 					}
 
 					if (HasResourceGenerationData(m)) { ret.resourceModules.AddRange(GetResourceGenerationData(m)); }
-				}
+				}*/
 
 				foreach (ProtoPartResourceSnapshot r in p.resources) {
 					if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
@@ -261,7 +285,18 @@ namespace BackgroundProcessing {
 			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
 
 			foreach (ResourceModuleData d in data.resourceModules) {
-				AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
+				if (d.powerCurve == null) {
+					AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
+				}
+				else {
+					CelestialBody kerbol = FlightGlobals.Bodies[0];
+					RaycastHit hitInfo;
+					bool hit = Physics.Raycast(v.GetWorldPos3D(), kerbol.position - v.GetWorldPos3D(), out hitInfo);
+
+					if (!hit || hitInfo.collider.gameObject == kerbol) {
+						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * d.powerCurve.Evaluate((float)kerbol.GetAltitude(v.GetWorldPos3D())), d.resourceName, modified);
+					}
+				}
 			}
 
 			ClampResource(modified);
