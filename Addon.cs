@@ -36,7 +36,7 @@ namespace BackgroundProcessing {
 			}
 
 			public void Invoke(Vessel v, uint id, ResourceRequestFunc r) {
-				if (resourceFunc == null) { }
+				if (resourceFunc == null) { updateFunc.Invoke(v, id); }
 				else { resourceFunc.Invoke(v, id, r); }
 			}
 		}
