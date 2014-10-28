@@ -305,22 +305,21 @@ namespace BackgroundProcessing {
 					Vector3d kerbolVector = (kerbol.position - partPos).normalized;
 					bool hit = Physics.Raycast(v.GetWorldPos3D(), kerbolVector, out hitInfo);
 
-					float orientationFactor = 1;
+					double orientationFactor = 1;
 
 					if (d.panelData.tracks) {
-						// This seems to produce harsher results than KSP by a pretty significant margin. Not sure why.
 						Vector3d localPivot = (v.transform.rotation * d.panelData.orientation * d.panelData.pivotAxis).normalized;
-						orientationFactor = 1 - Vector3.Dot(localPivot, kerbolVector);
+						orientationFactor = Math.Cos(Math.PI / 2.0 - Math.Acos(Vector3d.Dot(localPivot, kerbolVector)));
 					}
 					else {
 						Vector3d localSolarNormal = (v.transform.rotation * d.panelData.orientation * d.panelData.solarNormal).normalized;
-						orientationFactor = Vector3.Dot(localSolarNormal, kerbolVector);
+						orientationFactor = Vector3d.Dot(localSolarNormal, kerbolVector);
 					}
 
-					orientationFactor = Mathf.Clamp(orientationFactor, 0, 1);
+					orientationFactor = Math.Max(orientationFactor, 0);
 
 					if (!hit || hitInfo.collider.gameObject == kerbol) {
-						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * orientationFactor * d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
+						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * (float)orientationFactor * d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
 					}
 				}
 			}
