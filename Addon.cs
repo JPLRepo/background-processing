@@ -76,7 +76,7 @@ namespace BackgroundProcessing {
 			}
 		}
 
-		private struct CallbackPair {
+		private struct CallbackPair : IEquatable<CallbackPair> {
 			public string moduleName;
 			public uint partFlightID;
 
@@ -84,10 +84,18 @@ namespace BackgroundProcessing {
 				moduleName = m;
 				partFlightID = i;
 			}
+
+			public override int GetHashCode() {
+				return moduleName.GetHashCode() + partFlightID.GetHashCode();
+			}
+
+			public bool Equals(CallbackPair rhs) {
+				return moduleName == rhs.moduleName && partFlightID == rhs.partFlightID;
+			}
 		};
 
 		private class VesselData {
-			public List<CallbackPair> callbacks = new List<CallbackPair>();
+			public HashSet<CallbackPair> callbacks = new HashSet<CallbackPair>();
 			public List<ResourceModuleData> resourceModules = new List<ResourceModuleData>();
 			public Dictionary<string, List<ProtoPartResourceSnapshot>> storage = new Dictionary<string, List<ProtoPartResourceSnapshot>>();
 		}
