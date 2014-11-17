@@ -349,14 +349,14 @@ namespace BackgroundProcessing {
 
 				foreach (Vessel v in vessels) {
 					if (v.situation != Vessel.Situations.PRELAUNCH) {
-						if (!v.loaded || v.packed) {
+						if (!v.loaded) {
 							if (!vesselData.ContainsKey(v)) {
 								if (!CanGetVesselData(v)) { continue; }
 
 								vesselData.Add(v, GetVesselData(v));
 							}
 
-							if (!v.loaded) { HandleResources(v); }
+							HandleResources(v);
 
 							foreach (CallbackPair p in vesselData[v].callbacks) {
 								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource);
