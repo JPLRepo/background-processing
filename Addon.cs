@@ -169,29 +169,55 @@ namespace BackgroundProcessing {
 
 		private VesselData GetVesselData(Vessel v)
 		{
+			Debug.Log("BackgroundProcessing: Getting data for vessel " + v.vesselName);
+
 			VesselData ret = new VesselData();
 
-			foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
-				Part part = PartLoader.getPartInfoByName(p.partName).partPrefab;
-				if (part != null) {
-					PartModuleList partModuleList = part.Modules;
-					if (partModuleList != null && p.modules != null && partModuleList.Count == p.modules.Count) {
-						for (int i = 0; i < partModuleList.Count; ++i) {
-							if (partModuleList[i].moduleName == p.modules[i].moduleName) {
-								if (moduleHandlers.ContainsKey(partModuleList[i].moduleName)) {
-									ret.callbacks.Add(new CallbackPair(partModuleList[i].moduleName, p.flightID));
-								}
+			if (v.protoVessel != null) {
+				foreach (ProtoPartSnapshot p in v.protoVessel.protoPartSnapshots) {
+					Part part = PartLoader.getPartInfoByName(p.partName).partPrefab;
 
-								if (HasResourceGenerationData(partModuleList[i], p.modules[i])) { ret.resourceModules.AddRange(GetResourceGenerationData(partModuleList[i], p)); }
+					if (part == null) {
+						Debug.LogWarning("BackgroundProcessing: Couldn't find PartPrefab for part " + p.partName);
+						continue;
+					}
+
+					if (part.Modules == null) { continue; }
+
+					for (int i = 0; i < p.modules.Count; ++i) {
+						if (moduleHandlers.ContainsKey(p.modules[i].moduleName)) {
+							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID));
+						}
+
+						int j = i;
+						if (j >= part.Modules.Count || part.Modules[j].moduleName != p.modules[i].moduleName) {
+							if (j < part.Modules.Count) {
+								Debug.LogWarning("BackgroundProcessing: Expected " + p.modules[i].moduleName + " at index " + i + ", got " + part.Modules[j].moduleName);
+
+								for (j = i; j < part.Modules.Count; ++j) {
+									if (part.Modules[j].moduleName == p.modules[i].moduleName) {
+										Debug.LogWarning("BackgroundProcessing: Found " + p.modules[i].moduleName + " at index " + j);
+										break;
+									}
+								}
 							}
-							else { Debug.LogError("BackgroundProcessing: PartModule/ProtoPartModuleSnapshot sync error processing part " + p.partName + ". Something is very wrong."); }
+
+							if (j >= part.Modules.Count) {
+								Debug.LogError("BackgroundProcessing: Ran out of modules before finding module " + p.modules[i].moduleName);
+							}
+						}
+
+						if (j < part.Modules.Count) {
+							if (HasResourceGenerationData(part.Modules[j], p.modules[i])) {
+								ret.resourceModules.AddRange(GetResourceGenerationData(part.Modules[j], p));
+							}
 						}
 					}
-				}
 
-				foreach (ProtoPartResourceSnapshot r in p.resources) {
-					if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
-					ret.storage[r.resourceName].Add(r);
+					foreach (ProtoPartResourceSnapshot r in p.resources) {
+						if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
+						ret.storage[r.resourceName].Add(r);
+					}
 				}
 			}
 
