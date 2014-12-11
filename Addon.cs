@@ -101,12 +101,13 @@ namespace BackgroundProcessing {
 		}
 
 		private bool HasResourceGenerationData(PartModule m, ProtoPartModuleSnapshot s) {
-			if (m.moduleName == "ModuleDeployableSolarPanel") {
+			if (m != null && m.moduleName == "ModuleDeployableSolarPanel") {
 				if (s.moduleValues.GetValue("stateString") == ModuleDeployableSolarPanel.panelStates.EXTENDED.ToString()) {
 					return true;
 				}
 			}
-			if (m.moduleName == "ModuleCommand") {
+
+			if (m != null && m.moduleName == "ModuleCommand") {
 				ModuleCommand c = (ModuleCommand)m;
 
 				foreach (ModuleResource mr in c.inputResources) {
@@ -114,7 +115,7 @@ namespace BackgroundProcessing {
 				}
 			}
 
-			if (m.moduleName == "ModuleGenerator") {
+			if (m != null && m.moduleName == "ModuleGenerator") {
 				if (s.moduleValues.GetValue("generatorIsActive") == "true") {
 					ModuleGenerator g = (ModuleGenerator)m;
 					if (g.inputList.Count <= 0) {
@@ -125,13 +126,13 @@ namespace BackgroundProcessing {
 				}
 			}
 
-			return resourceData.ContainsKey(m.moduleName);
+			return resourceData.ContainsKey(s.moduleName);
 		}
 
 		private List<ResourceModuleData> GetResourceGenerationData(PartModule m, ProtoPartSnapshot part) {
 			List<ResourceModuleData> ret = new List<ResourceModuleData>();
 
-			if (m.moduleName == "ModuleGenerator") {
+			if (m != null && m.moduleName == "ModuleGenerator") {
 				ModuleGenerator g = (ModuleGenerator)m;
 
 				if (g.inputList.Count <= 0) {
@@ -143,7 +144,7 @@ namespace BackgroundProcessing {
 				}
 			}
 
-			if (m.moduleName == "ModuleDeployableSolarPanel") {
+			if (m != null && m.moduleName == "ModuleDeployableSolarPanel") {
 				ModuleDeployableSolarPanel p = (ModuleDeployableSolarPanel)m;
 
 				if (interestingResources.Contains(p.resourceName)) {
@@ -154,7 +155,7 @@ namespace BackgroundProcessing {
 				}
 			}
 
-			if (m.moduleName == "ModuleCommand") {
+			if (m != null && m.moduleName == "ModuleCommand") {
 				ModuleCommand c = (ModuleCommand)m;
 				foreach (ModuleResource mr in c.inputResources) {
 					if (interestingResources.Contains(mr.name)) {
@@ -163,7 +164,7 @@ namespace BackgroundProcessing {
 				}
 			}
 
-			if (resourceData.ContainsKey(m.moduleName)) { ret.AddRange(resourceData[m.moduleName]); }
+			if (m != null && resourceData.ContainsKey(m.moduleName)) { ret.AddRange(resourceData[m.moduleName]); }
 			return ret;
 		}
 
@@ -201,15 +202,18 @@ namespace BackgroundProcessing {
 									}
 								}
 							}
-
-							if (j >= part.Modules.Count) {
-								Debug.LogError("BackgroundProcessing: Ran out of modules before finding module " + p.modules[i].moduleName);
-							}
 						}
 
 						if (j < part.Modules.Count) {
 							if (HasResourceGenerationData(part.Modules[j], p.modules[i])) {
 								ret.resourceModules.AddRange(GetResourceGenerationData(part.Modules[j], p));
+							}
+						}
+						else {
+							Debug.LogWarning("BackgroundProcessing: Ran out of modules before finding module " + p.modules[i].moduleName);
+
+							if (HasResourceGenerationData(null, p.modules[i])) {
+								ret.resourceModules.AddRange(GetResourceGenerationData(null, p));
 							}
 						}
 					}
@@ -228,11 +232,26 @@ namespace BackgroundProcessing {
 			return v.protoVessel != null;
 		}
 
-		public Addon() {
-			Instance = this;
+		public bool IsMostRecentAssembly() {
+			Assembly me = Assembly.GetExecutingAssembly();
+			foreach (AssemblyLoader.LoadedAssembly la in AssemblyLoader.loadedAssemblies) {
+				if (la.assembly.GetName().Name != me.GetName().Name) {continue;}
+
+				if (la.assembly.GetName().Version > me.GetName().Version) { return false; }
+			}
+
+			return true;
 		}
 
-		public void Start() {
+		public void Awake() {
+			if (Instance != null || !IsMostRecentAssembly()) {
+				Destroy(gameObject);
+				return;
+			}
+
+			Debug.Log("BackgroundProcessing: Running assembly at " + Assembly.GetExecutingAssembly().Location + " (" + Assembly.GetExecutingAssembly().GetName().Version + ")");
+
+			Instance = this;
 			DontDestroyOnLoad(this);
 
 			interestingResources.Add("ElectricCharge");
