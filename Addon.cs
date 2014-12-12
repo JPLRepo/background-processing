@@ -21,7 +21,12 @@ namespace BackgroundProcessing {
 			return amount - ret;
 		}
 
-		static public Addon Instance { get; private set; }
+		static private bool loaded = false;
+		static private Addon mInstance = null;
+		public Addon Instance {
+			get { return mInstance; }
+			private set { mInstance = value; }
+		}
 
 		class UpdateHelper {
 			private BackgroundUpdateResourceFunc resourceFunc = null;
@@ -186,6 +191,12 @@ namespace BackgroundProcessing {
 					if (part.Modules == null) { continue; }
 
 					for (int i = 0; i < p.modules.Count; ++i) {
+						if (p.modules[i].moduleName == null) {
+							Debug.LogWarning("BackgroundProcessing: Null moduleName for module " + i + "/" + p.modules.Count);
+							Debug.LogWarning("BackgroundProcessing: Module values: " + p.modules[i].moduleValues);
+							continue;
+						}
+
 						if (moduleHandlers.ContainsKey(p.modules[i].moduleName)) {
 							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID));
 						}
@@ -219,6 +230,12 @@ namespace BackgroundProcessing {
 					}
 
 					foreach (ProtoPartResourceSnapshot r in p.resources) {
+						if (r.resourceName == null) {
+							Debug.LogWarning("BackgroundProcessing: Null resourceName.");
+							Debug.LogWarning("BackgroundProcessing: Resource values: " + r.resourceValues);
+							continue;
+						}
+
 						if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
 						ret.storage[r.resourceName].Add(r);
 					}
@@ -234,6 +251,7 @@ namespace BackgroundProcessing {
 
 		public bool IsMostRecentAssembly() {
 			Assembly me = Assembly.GetExecutingAssembly();
+
 			foreach (AssemblyLoader.LoadedAssembly la in AssemblyLoader.loadedAssemblies) {
 				if (la.assembly.GetName().Name != me.GetName().Name) {continue;}
 
@@ -244,7 +262,7 @@ namespace BackgroundProcessing {
 		}
 
 		public void Awake() {
-			if (Instance != null || !IsMostRecentAssembly()) {
+			if (loaded || !IsMostRecentAssembly()) {
 				Destroy(gameObject);
 				return;
 			}
@@ -252,6 +270,7 @@ namespace BackgroundProcessing {
 			Debug.Log("BackgroundProcessing: Running assembly at " + Assembly.GetExecutingAssembly().Location + " (" + Assembly.GetExecutingAssembly().GetName().Version + ")");
 
 			Instance = this;
+			loaded = true;
 			DontDestroyOnLoad(this);
 
 			interestingResources.Add("ElectricCharge");
