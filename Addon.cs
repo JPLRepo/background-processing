@@ -261,8 +261,16 @@ namespace BackgroundProcessing {
 			return true;
 		}
 
+		private void ClearVesselData(GameScenes scene) {
+			Debug.Log("BackgroundProcessing: Clearing vessel data");
+			vesselData.Clear();
+		}
+
 		public void Awake() {
 			if (loaded || !IsMostRecentAssembly()) {
+				Debug.Log("BackgroundProcessing: Assembly " + Assembly.GetExecutingAssembly().Location + " (" + Assembly.GetExecutingAssembly().GetName().Version + ") not running because:");
+				if (loaded) { Debug.Log("BackgroundProcessing already loaded"); }
+				else { Debug.Log("IsMostRecentAssembly returned false"); }
 				Destroy(gameObject);
 				return;
 			}
@@ -308,6 +316,8 @@ namespace BackgroundProcessing {
 					}
 				}
 			}
+
+			GameEvents.onLevelWasLoaded.Add(ClearVesselData);
 		}
 
 		private HashSet<ProtoPartResourceSnapshot> AddResource(VesselData data, float amount, string name, HashSet<ProtoPartResourceSnapshot> modified) {
