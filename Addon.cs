@@ -251,6 +251,13 @@ namespace BackgroundProcessing {
 
 		public bool IsMostRecentAssembly() {
 			Assembly me = Assembly.GetExecutingAssembly();
+			Debug.Log("BackgroundProcessing: IsMostRecentAssembly");
+
+			foreach (AssemblyLoader.LoadedAssembly la in AssemblyLoader.loadedAssemblies) {
+				if (la.assembly.GetName().Name != me.GetName().Name) { continue; }
+
+				Debug.Log("\tBackgroundProcessing: Checking assembly " + la.assembly.GetName().Name + " path " + la.assembly.Location + " version " + la.assembly.GetName().Version);
+			}
 
 			foreach (AssemblyLoader.LoadedAssembly la in AssemblyLoader.loadedAssemblies) {
 				if (la.assembly.GetName().Name != me.GetName().Name) {continue;}
@@ -378,7 +385,7 @@ namespace BackgroundProcessing {
 
 			foreach (ResourceModuleData d in data.resourceModules) {
 				if (d.panelData == null) {
-					AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
+					AddResource(data, d.resourceRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
 				}
 				else {
 					CelestialBody kerbol = FlightGlobals.Bodies[0];
@@ -401,7 +408,7 @@ namespace BackgroundProcessing {
 					orientationFactor = Math.Max(orientationFactor, 0);
 
 					if (!hit || hitInfo.collider.gameObject == kerbol) {
-						AddResource(data, d.resourceRate * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime * (float)orientationFactor * d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
+						AddResource(data, d.resourceRate * TimeWarp.fixedDeltaTime * (float)orientationFactor * d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
 					}
 				}
 			}
