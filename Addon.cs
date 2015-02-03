@@ -121,11 +121,13 @@ namespace BackgroundProcessing {
 			}
 
 			if (m != null && m.moduleName == "ModuleGenerator") {
-				if (s.moduleValues.GetValue("generatorIsActive") == "true") {
+				bool active = false;
+				Boolean.TryParse(s.moduleValues.GetValue("generatorIsActive"), out active);
+				if (active) {
 					ModuleGenerator g = (ModuleGenerator)m;
 					if (g.inputList.Count <= 0) {
 						foreach (ModuleGenerator.GeneratorResource gr in g.outputList) {
-							if (interestingResources.Contains(gr.name)) { return true; }
+							if (interestingResources.Contains(gr.name)) {return true; }
 						}
 					}
 				}
@@ -136,6 +138,8 @@ namespace BackgroundProcessing {
 
 		private List<ResourceModuleData> GetResourceGenerationData(PartModule m, ProtoPartSnapshot part) {
 			List<ResourceModuleData> ret = new List<ResourceModuleData>();
+
+			Debug.Log("Get resource generation data for partmodule " + m.moduleName);
 
 			if (m != null && m.moduleName == "ModuleGenerator") {
 				ModuleGenerator g = (ModuleGenerator)m;
@@ -295,9 +299,9 @@ namespace BackgroundProcessing {
 					foreach (PartModule m in a.partPrefab.Modules) {
 						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint)}, null);
 						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
-						if (fbur != null) { moduleHandlers.Add(m.moduleName, new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur))); }
+						if (fbur != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur)); }
 						else {
-							if (fbu != null) { moduleHandlers.Add(m.moduleName, new UpdateHelper((BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu))); }
+							if (fbu != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu)); }
 						}
 
 						MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
@@ -378,8 +382,12 @@ namespace BackgroundProcessing {
 		}
 
 		private void HandleResources(Vessel v) {
+			Debug.Log("HandleResources for vessel " + v.GetName());
+
 			VesselData data = vesselData[v];
 			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
+
+			Debug.Log("Has resource modules");
 
 			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
 
