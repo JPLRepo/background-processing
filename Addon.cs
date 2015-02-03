@@ -302,6 +302,8 @@ namespace BackgroundProcessing {
 						if (processed.Contains(m.moduleName)) { continue; }
 						processed.Add(m.moduleName);
 
+						Debug.Log("BackgroundProcessing: Processing module " + m.moduleName);
+
 						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint)}, null);
 						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
 						if (fbur != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur)); }
@@ -321,11 +323,11 @@ namespace BackgroundProcessing {
 							resourceParams[1] = "";
 							resourceParams[2] = 0.0f;
 
+							resourceData[m.moduleName] = new List<ResourceModuleData>();
 							for (int count = (int)prc.Invoke(null, null); count > 0; --count) {
 								resourceParams[0] = count;
 								pr.Invoke(null, resourceParams);
 
-								if (!resourceData.ContainsKey(m.moduleName)) { resourceData.Add(m.moduleName, new List<ResourceModuleData>()); }
 								resourceData[m.moduleName].Add(new ResourceModuleData((string)resourceParams[1], (float)resourceParams[2]));
 							}
 						}
