@@ -294,9 +294,14 @@ namespace BackgroundProcessing {
 
 			interestingResources.Add("ElectricCharge");
 
+			HashSet<String> processed = new HashSet<String>();
+
 			foreach (AvailablePart a in PartLoader.LoadedPartsList) {
 				if (a.partPrefab.Modules != null) {
 					foreach (PartModule m in a.partPrefab.Modules) {
+						if (processed.Contains(m.moduleName)) { continue; }
+						processed.Add(m.moduleName);
+
 						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint)}, null);
 						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
 						if (fbur != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur)); }
