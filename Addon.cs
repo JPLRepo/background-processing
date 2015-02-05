@@ -2,11 +2,12 @@
 using System;
 using System.Reflection;
 using UnityEngine;
+using System.Linq;
 
 namespace BackgroundProcessing {
-	using ResourceRequestFunc = Func<Vessel, float, string, float>;
-	using BackgroundUpdateResourceFunc = Action<Vessel, uint, Func<Vessel, float, string, float>>;
-	using BackgroundUpdateFunc = Action<Vessel, uint>;
+	public delegate float ResourceRequestFunc(Vessel v, float request, string resource);
+	public delegate void BackgroundUpdateResourceFunc(Vessel v, uint partFlightId, ResourceRequestFunc resourceFunc, out System.Object data);
+	public delegate void BackgroundUpdateFunc(Vessel v, uint partFlightId, out System.Object data);
 
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class Addon : MonoBehaviour {
@@ -40,9 +41,9 @@ namespace BackgroundProcessing {
 				updateFunc = f;
 			}
 
-			public void Invoke(Vessel v, uint id, ResourceRequestFunc r) {
-				if (resourceFunc == null) { updateFunc.Invoke(v, id); }
-				else { resourceFunc.Invoke(v, id, r); }
+			public void Invoke(Vessel v, uint id, ResourceRequestFunc r, out System.Object data) {
+				if (resourceFunc == null) { updateFunc.Invoke(v, id, out data); }
+				else { resourceFunc.Invoke(v, id, r, out data); }
 			}
 		}
 
@@ -99,8 +100,12 @@ namespace BackgroundProcessing {
 			}
 		};
 
+		class ObjectHolder {
+			public System.Object data;
+		};
+
 		private class VesselData {
-			public HashSet<CallbackPair> callbacks = new HashSet<CallbackPair>();
+			public Dictionary<CallbackPair, ObjectHolder> callbacks = new Dictionary<CallbackPair, ObjectHolder>();
 			public List<ResourceModuleData> resourceModules = new List<ResourceModuleData>();
 			public Dictionary<string, List<ProtoPartResourceSnapshot>> storage = new Dictionary<string, List<ProtoPartResourceSnapshot>>();
 		}
@@ -202,7 +207,7 @@ namespace BackgroundProcessing {
 						}
 
 						if (moduleHandlers.ContainsKey(p.modules[i].moduleName)) {
-							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID));
+							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID), new ObjectHolder());
 						}
 
 						int j = i;
@@ -304,8 +309,8 @@ namespace BackgroundProcessing {
 
 						Debug.Log("BackgroundProcessing: Processing module " + m.moduleName);
 
-						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[2] { typeof(Vessel), typeof(uint)}, null);
-						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc) }, null);
+						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(System.Object).MakeByRefType()}, null);
+						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[4] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc), typeof(System.Object).MakeByRefType() }, null);
 						if (fbur != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur)); }
 						else {
 							if (fbu != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu)); }
@@ -389,12 +394,8 @@ namespace BackgroundProcessing {
 		}
 
 		private void HandleResources(Vessel v) {
-			Debug.Log("HandleResources for vessel " + v.GetName());
-
 			VesselData data = vesselData[v];
 			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
-
-			Debug.Log("Has resource modules");
 
 			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
 
@@ -454,8 +455,8 @@ namespace BackgroundProcessing {
 
 							HandleResources(v);
 
-							foreach (CallbackPair p in vesselData[v].callbacks) {
-								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource);
+							foreach (CallbackPair p in vesselData[v].callbacks.Keys) {
+								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource, out vesselData[v].callbacks[p].data);
 							}
 						}
 						else {vesselData.Remove(v);}
