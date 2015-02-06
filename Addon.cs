@@ -162,8 +162,6 @@ namespace BackgroundProcessing {
 		private List<ResourceModuleData> GetResourceGenerationData(PartModule m, ProtoPartSnapshot part) {
 			List<ResourceModuleData> ret = new List<ResourceModuleData>();
 
-			Debug.Log("Get resource generation data for partmodule " + m.moduleName);
-
 			if (m != null && m.moduleName == "ModuleGenerator") {
 				ModuleGenerator g = (ModuleGenerator)m;
 
@@ -202,8 +200,6 @@ namespace BackgroundProcessing {
 
 		private VesselData GetVesselData(Vessel v)
 		{
-			Debug.Log("BackgroundProcessing: Getting data for vessel " + v.vesselName);
-
 			VesselData ret = new VesselData();
 
 			if (v.protoVessel != null) {
@@ -225,7 +221,7 @@ namespace BackgroundProcessing {
 						}
 
 						if (moduleHandlers.ContainsKey(p.modules[i].moduleName)) {
-							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID), null);
+							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID), new ObjectHolder());
 						}
 
 						int j = i;
@@ -278,12 +274,9 @@ namespace BackgroundProcessing {
 
 		public bool IsMostRecentAssembly() {
 			Assembly me = Assembly.GetExecutingAssembly();
-			Debug.Log("BackgroundProcessing: IsMostRecentAssembly");
 
 			foreach (AssemblyLoader.LoadedAssembly la in AssemblyLoader.loadedAssemblies) {
 				if (la.assembly.GetName().Name != me.GetName().Name) { continue; }
-
-				Debug.Log("\tBackgroundProcessing: Checking assembly " + la.assembly.GetName().Name + " path " + la.assembly.Location + " version " + la.assembly.GetName().Version);
 			}
 
 			foreach (AssemblyLoader.LoadedAssembly la in AssemblyLoader.loadedAssemblies) {
@@ -293,11 +286,6 @@ namespace BackgroundProcessing {
 			}
 
 			return true;
-		}
-
-		private void ClearVesselData(GameScenes scene) {
-			Debug.Log("BackgroundProcessing: Clearing vessel data");
-			vesselData.Clear();
 		}
 
 		public void Awake() {
@@ -324,8 +312,6 @@ namespace BackgroundProcessing {
 					foreach (PartModule m in a.partPrefab.Modules) {
 						if (processed.Contains(m.moduleName)) { continue; }
 						processed.Add(m.moduleName);
-
-						Debug.Log("BackgroundProcessing: Processing module " + m.moduleName);
 
 						MethodInfo lf = m.GetType().GetMethod("BackgroundLoad", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(System.Object).MakeByRefType() }, null);
 						MethodInfo sf = m.GetType().GetMethod("BackgroundSave", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(System.Object) }, null);
@@ -502,7 +488,8 @@ namespace BackgroundProcessing {
 			}
 		}
 
-		public void OnSave(ConfigNode persistence) {
+		private void OnSave(ConfigNode persistence) {
+			Debug.Log("BackgroundProcessing: Saving game state");
 			if (FlightGlobals.fetch != null) {
 				List<Vessel> vessels = new List<Vessel>(FlightGlobals.Vessels);
 				vessels.Remove(FlightGlobals.ActiveVessel);
@@ -515,6 +502,12 @@ namespace BackgroundProcessing {
 					}
 				}
 			}
+		}
+
+		private void ClearVesselData(GameScenes scene) {
+			Debug.Log("BackgroundProcessing: Clearing vessel data");
+			OnSave(null);
+			vesselData.Clear();
 		}
     }
 }
