@@ -8,6 +8,9 @@ namespace BackgroundProcessing {
 	public delegate float ResourceRequestFunc(Vessel v, float request, string resource);
 	public delegate void BackgroundUpdateResourceFunc(Vessel v, uint partFlightId, ResourceRequestFunc resourceFunc, out System.Object data);
 	public delegate void BackgroundUpdateFunc(Vessel v, uint partFlightId, out System.Object data);
+	
+	public delegate void BackgroundSaveFunc(Vessel v, uint partFlightId, System.Object data);
+	public delegate void BackgroundLoadFunc(Vessel v, uint partFlightId, out System.Object data);
 
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class Addon : MonoBehaviour {
@@ -33,17 +36,33 @@ namespace BackgroundProcessing {
 			private BackgroundUpdateResourceFunc resourceFunc = null;
 			private BackgroundUpdateFunc updateFunc = null;
 
-			public UpdateHelper(BackgroundUpdateResourceFunc rf) {
+			private BackgroundLoadFunc loadFunc = null;
+			private BackgroundSaveFunc saveFunc = null;
+
+			public UpdateHelper(BackgroundUpdateResourceFunc rf, BackgroundLoadFunc lf, BackgroundSaveFunc sf) {
 				resourceFunc = rf;
+				loadFunc = lf;
+				saveFunc = sf;
 			}
 
-			public UpdateHelper(BackgroundUpdateFunc f) {
+			public UpdateHelper(BackgroundUpdateFunc f, BackgroundLoadFunc lf, BackgroundSaveFunc sf) {
 				updateFunc = f;
+				loadFunc = lf;
+				saveFunc = sf;
 			}
 
 			public void Invoke(Vessel v, uint id, ResourceRequestFunc r, out System.Object data) {
 				if (resourceFunc == null) { updateFunc.Invoke(v, id, out data); }
 				else { resourceFunc.Invoke(v, id, r, out data); }
+			}
+
+			public void Load(Vessel v, uint id, out System.Object data) {
+				if (loadFunc != null) {loadFunc.Invoke(v, id, out data);}
+				else {data = null;}
+			}
+
+			public void Save(Vessel v, uint id, System.Object data) {
+				if (saveFunc != null) { saveFunc.Invoke(v, id, data); }
 			}
 		}
 
@@ -207,7 +226,7 @@ namespace BackgroundProcessing {
 						}
 
 						if (moduleHandlers.ContainsKey(p.modules[i].moduleName)) {
-							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID), new ObjectHolder());
+							ret.callbacks.Add(new CallbackPair(p.modules[i].moduleName, p.flightID), null);
 						}
 
 						int j = i;
@@ -309,11 +328,26 @@ namespace BackgroundProcessing {
 
 						Debug.Log("BackgroundProcessing: Processing module " + m.moduleName);
 
+						MethodInfo lf = m.GetType().GetMethod("BackgroundLoad", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(System.Object).MakeByRefType() }, null);
+						MethodInfo sf = m.GetType().GetMethod("BackgroundSave", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(System.Object) }, null);
+
 						MethodInfo fbu = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[3] { typeof(Vessel), typeof(uint), typeof(System.Object).MakeByRefType()}, null);
 						MethodInfo fbur = m.GetType().GetMethod("FixedBackgroundUpdate", BindingFlags.Public | BindingFlags.Static, null, new Type[4] { typeof(Vessel), typeof(uint), typeof(ResourceRequestFunc), typeof(System.Object).MakeByRefType() }, null);
-						if (fbur != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur)); }
+						if (fbur != null) {
+							moduleHandlers[m.moduleName] = new UpdateHelper(
+								(BackgroundUpdateResourceFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateResourceFunc), fbur),
+								lf != null ? (BackgroundLoadFunc)Delegate.CreateDelegate(typeof(BackgroundLoadFunc), lf) : null,
+								sf != null ? (BackgroundSaveFunc)Delegate.CreateDelegate(typeof(BackgroundSaveFunc), sf) : null
+							);
+						}
 						else {
-							if (fbu != null) { moduleHandlers[m.moduleName] = new UpdateHelper((BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu)); }
+							if (fbu != null) {
+								moduleHandlers[m.moduleName] = new UpdateHelper(
+									(BackgroundUpdateFunc)Delegate.CreateDelegate(typeof(BackgroundUpdateFunc), fbu),
+									lf != null ? (BackgroundLoadFunc)Delegate.CreateDelegate(typeof(BackgroundLoadFunc), lf) : null,
+									sf != null ? (BackgroundSaveFunc)Delegate.CreateDelegate(typeof(BackgroundSaveFunc), sf) : null
+								);
+							}
 						}
 
 						MethodInfo ir = m.GetType().GetMethod("GetInterestingResources", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
@@ -341,6 +375,7 @@ namespace BackgroundProcessing {
 			}
 
 			GameEvents.onLevelWasLoaded.Add(ClearVesselData);
+			GameEvents.onGameStateSave.Add(OnSave);
 		}
 
 		private HashSet<ProtoPartResourceSnapshot> AddResource(VesselData data, float amount, string name, HashSet<ProtoPartResourceSnapshot> modified) {
@@ -451,6 +486,9 @@ namespace BackgroundProcessing {
 								if (!CanGetVesselData(v)) { continue; }
 
 								vesselData.Add(v, GetVesselData(v));
+								foreach (CallbackPair p in vesselData[v].callbacks.Keys) {
+									moduleHandlers[p.moduleName].Load(v, p.partFlightID, out vesselData[v].callbacks[p].data);
+								}
 							}
 
 							HandleResources(v);
@@ -460,6 +498,21 @@ namespace BackgroundProcessing {
 							}
 						}
 						else {vesselData.Remove(v);}
+					}
+				}
+			}
+		}
+
+		public void OnSave(ConfigNode persistence) {
+			if (FlightGlobals.fetch != null) {
+				List<Vessel> vessels = new List<Vessel>(FlightGlobals.Vessels);
+				vessels.Remove(FlightGlobals.ActiveVessel);
+
+				foreach (Vessel v in vessels) {
+					if (vesselData.ContainsKey(v)) {
+						foreach (CallbackPair p in vesselData[v].callbacks.Keys) {
+							moduleHandlers[p.moduleName].Save(v, p.partFlightID, vesselData[v].callbacks[p].data);
+						}
 					}
 				}
 			}
