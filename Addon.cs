@@ -6,11 +6,11 @@ using System.Linq;
 
 namespace BackgroundProcessing {
 	public delegate float ResourceRequestFunc(Vessel v, float request, string resource);
-	public delegate void BackgroundUpdateResourceFunc(Vessel v, uint partFlightId, ResourceRequestFunc resourceFunc, out System.Object data);
-	public delegate void BackgroundUpdateFunc(Vessel v, uint partFlightId, out System.Object data);
+	public delegate void BackgroundUpdateResourceFunc(Vessel v, uint partFlightId, ResourceRequestFunc resourceFunc, ref System.Object data);
+	public delegate void BackgroundUpdateFunc(Vessel v, uint partFlightId, ref System.Object data);
 	
 	public delegate void BackgroundSaveFunc(Vessel v, uint partFlightId, System.Object data);
-	public delegate void BackgroundLoadFunc(Vessel v, uint partFlightId, out System.Object data);
+	public delegate void BackgroundLoadFunc(Vessel v, uint partFlightId, ref System.Object data);
 
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class Addon : MonoBehaviour {
@@ -51,14 +51,13 @@ namespace BackgroundProcessing {
 				saveFunc = sf;
 			}
 
-			public void Invoke(Vessel v, uint id, ResourceRequestFunc r, out System.Object data) {
-				if (resourceFunc == null) { updateFunc.Invoke(v, id, out data); }
-				else { resourceFunc.Invoke(v, id, r, out data); }
+			public void Invoke(Vessel v, uint id, ResourceRequestFunc r, ref System.Object data) {
+				if (resourceFunc == null) { updateFunc.Invoke(v, id, ref data); }
+				else { resourceFunc.Invoke(v, id, r, ref data); }
 			}
 
-			public void Load(Vessel v, uint id, out System.Object data) {
-				if (loadFunc != null) {loadFunc.Invoke(v, id, out data);}
-				else {data = null;}
+			public void Load(Vessel v, uint id, ref System.Object data) {
+				if (loadFunc != null) {loadFunc.Invoke(v, id, ref data);}
 			}
 
 			public void Save(Vessel v, uint id, System.Object data) {
@@ -487,14 +486,14 @@ namespace BackgroundProcessing {
 
 								vesselData.Add(v, GetVesselData(v));
 								foreach (CallbackPair p in vesselData[v].callbacks.Keys) {
-									moduleHandlers[p.moduleName].Load(v, p.partFlightID, out vesselData[v].callbacks[p].data);
+									moduleHandlers[p.moduleName].Load(v, p.partFlightID, ref vesselData[v].callbacks[p].data);
 								}
 							}
 
 							HandleResources(v);
 
 							foreach (CallbackPair p in vesselData[v].callbacks.Keys) {
-								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource, out vesselData[v].callbacks[p].data);
+								moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource, ref vesselData[v].callbacks[p].data);
 							}
 						}
 						else {vesselData.Remove(v);}
