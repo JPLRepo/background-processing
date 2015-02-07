@@ -5,7 +5,7 @@ using UnityEngine;
 using System.Linq;
 
 namespace BackgroundProcessing {
-	public delegate float ResourceRequestFunc(Vessel v, float request, string resource);
+	using ResourceRequestFunc = Func<Vessel, float, string, float>;
 	public delegate void BackgroundUpdateResourceFunc(Vessel v, uint partFlightId, ResourceRequestFunc resourceFunc, ref System.Object data);
 	public delegate void BackgroundUpdateFunc(Vessel v, uint partFlightId, ref System.Object data);
 	
