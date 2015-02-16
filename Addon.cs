@@ -259,6 +259,16 @@ namespace BackgroundProcessing {
 							continue;
 						}
 
+						bool flowState;
+
+						if (bool.TryParse(r.resourceValues.GetValue("flowState"), out flowState) && !flowState) {
+							continue;
+						}
+						else {
+							Debug.LogWarning("BackgroundProcessing: failed to read flow state for resource " + r.resourceName);
+							Debug.LogWarning("BackgroundProcessing: Resource values: " + r.resourceValues);
+						}
+
 						if (!ret.storage.ContainsKey(r.resourceName)) { ret.storage.Add(r.resourceName, new List<ProtoPartResourceSnapshot>()); }
 						ret.storage[r.resourceName].Add(r);
 					}
