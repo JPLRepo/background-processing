@@ -77,14 +77,20 @@ namespace BackgroundProcessing {
 			public Vector3d solarNormal {get; private set;}
 			public Vector3d pivotAxis { get; private set; }
 			public bool tracks { get; private set; }
+			public bool usesCurve { get; private set; }
+			public FloatCurve tempCurve {get; private set;}
+			public float temperature { get; private set; }
 
-			public SolarPanelData(FloatCurve pc, Vector3d p, Quaternion o, Vector3d sn, Vector3d pa, bool t) {
+			public SolarPanelData(FloatCurve pc, Vector3d p, Quaternion o, Vector3d sn, Vector3d pa, bool t, bool uC, FloatCurve tE, float tmp) {
 				powerCurve = pc;
 				position = p;
 				orientation = o;
 				solarNormal = sn;
 				pivotAxis = pa;
 				tracks = t;
+				usesCurve = uC;
+				tempCurve = tE;
+				temperature = tmp;
 			}
 		}
 
@@ -181,7 +187,7 @@ namespace BackgroundProcessing {
 					Transform panel = p.part.FindModelComponent<Transform>(p.raycastTransformName);
 					Transform pivot = p.part.FindModelComponent<Transform>(p.pivotName);
 
-					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, new SolarPanelData(p.powerCurve, part.position, part.rotation, panel.forward, pivot.up, p.sunTracking)));
+					ret.Add(new ResourceModuleData(p.resourceName, p.chargeRate, new SolarPanelData(p.powerCurve, part.position, part.rotation, panel.forward, pivot.up, p.sunTracking, p.useCurve, p.temperatureEfficCurve, (float)part.temperature)));
 				}
 			}
 
@@ -261,8 +267,8 @@ namespace BackgroundProcessing {
 
 						bool flowState;
 
-						if (bool.TryParse(r.resourceValues.GetValue("flowState"), out flowState) && !flowState) {
-							continue;
+						if (bool.TryParse(r.resourceValues.GetValue("flowState"), out flowState)) {
+							if (!flowState) { continue; }
 						}
 						else {
 							Debug.LogWarning("BackgroundProcessing: failed to read flow state for resource " + r.resourceName);
@@ -374,6 +380,8 @@ namespace BackgroundProcessing {
 		}
 
 		private HashSet<ProtoPartResourceSnapshot> AddResource(VesselData data, float amount, string name, HashSet<ProtoPartResourceSnapshot> modified) {
+			Debug.Log("AddResource called, adding " + amount + " " + name);
+			
 			if (!data.storage.ContainsKey(name)) { return modified; }
 
 			bool reduce = amount < 0;
@@ -454,7 +462,17 @@ namespace BackgroundProcessing {
 					orientationFactor = Math.Max(orientationFactor, 0);
 
 					if (!hit || hitInfo.collider.gameObject == kerbol) {
-						AddResource(data, d.resourceRate * TimeWarp.fixedDeltaTime * (float)orientationFactor * d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)), d.resourceName, modified);
+						double distance = kerbol.GetAltitude(partPos);
+						double solarFlux = PhysicsGlobals.SolarLuminosity / (12.566370614359172 * distance * distance);
+
+						if (v.atmDensity > 0.0) {
+							// Adjust for atmosphere
+						}
+
+						double multiplier = 1;
+						if (d.panelData.usesCurve) {multiplier = d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos));}
+						else { multiplier = solarFlux / PhysicsGlobals.SolarLuminosityAtHome; }
+						AddResource(data, d.resourceRate * TimeWarp.fixedDeltaTime * (float)orientationFactor * d.panelData.tempCurve.Evaluate(d.panelData.temperature), d.resourceName, modified);
 					}
 				}
 			}
