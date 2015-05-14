@@ -433,15 +433,21 @@ namespace BackgroundProcessing {
 
 		private void HandleResources(Vessel v) {
 			VesselData data = vesselData[v];
-			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {return;}
+			if (v.protoVessel.protoPartSnapshots.Count <= 0 || data.resourceModules.Count <= 0) {
+				Debug.Log("Vessel " + v.vesselName + " has no resource modules");
+				return;
+			}
 
 			HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
 
 			foreach (ResourceModuleData d in data.resourceModules) {
+				Debug.Log("Checking resource module with " + d.resourceName + " for vessel " + v.vesselName);
 				if (d.panelData == null) {
+					Debug.Log("No panel data, just adding resource");
 					AddResource(data, d.resourceRate * TimeWarp.fixedDeltaTime, d.resourceName, modified);
 				}
 				else {
+					Debug.Log("Panel data, doing solar panel calcs");
 					CelestialBody kerbol = FlightGlobals.Bodies[0];
 					RaycastHit hitInfo;
 					Vector3d partPos = v.GetWorldPos3D() + d.panelData.position;
@@ -461,18 +467,46 @@ namespace BackgroundProcessing {
 
 					orientationFactor = Math.Max(orientationFactor, 0);
 
-					if (!hit || hitInfo.collider.gameObject == kerbol) {
+					if (!hit || hitInfo.collider.gameObject.name.Equals("Sun")) {
 						double distance = kerbol.GetAltitude(partPos);
 						double solarFlux = PhysicsGlobals.SolarLuminosity / (12.566370614359172 * distance * distance);
+						Debug.Log("Pre-atmosphere flux: " + solarFlux + ", pre-atmosphere distance: " + distance + ", solar luminosity: " + PhysicsGlobals.SolarLuminosity);
 
-						if (v.atmDensity > 0.0) {
-							// Adjust for atmosphere
+						double staticPressure = v.mainBody.GetPressure(v.altitude);
+						Debug.Log("Static pressure: " + staticPressure);
+
+						if (staticPressure > 0.0) {
+							double density = v.mainBody.GetDensity(staticPressure, d.panelData.temperature);
+							Debug.Log("density: " + density);
+							Vector3 up = FlightGlobals.getUpAxis(v.mainBody, v.vesselTransform.position).normalized;
+							double sunPower = v.mainBody.radiusAtmoFactor * Vector3d.Dot(up, kerbolVector);
+							double sMult = v.mainBody.GetSolarPowerFactor(density);
+							if (sunPower < 0) {
+								sMult /= Math.Sqrt(2.0 * v.mainBody.radiusAtmoFactor + 1.0);
+							}
+							else {
+								sMult /= Math.Sqrt(sunPower * sunPower + 2.0 * v.mainBody.radiusAtmoFactor + 1.0) - sunPower;
+							}
+
+							Debug.Log("Atmospheric flux adjustment: " + sMult);
+							solarFlux *= sMult;
+
+							Debug.Log("Vessel solar flux: " + v.solarFlux);
 						}
+						else { Debug.Log("No need for atmospheric adjustment"); }
 
-						double multiplier = 1;
-						if (d.panelData.usesCurve) {multiplier = d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos));}
-						else { multiplier = solarFlux / PhysicsGlobals.SolarLuminosityAtHome; }
-						AddResource(data, d.resourceRate * TimeWarp.fixedDeltaTime * (float)orientationFactor * d.panelData.tempCurve.Evaluate(d.panelData.temperature), d.resourceName, modified);
+						float multiplier = 1;
+						if (d.panelData.usesCurve) { multiplier = d.panelData.powerCurve.Evaluate((float)kerbol.GetAltitude(partPos)); }
+						else { multiplier = (float)(solarFlux / PhysicsGlobals.SolarLuminosityAtHome); }
+
+						Debug.Log("Resource rate: " + d.resourceRate);
+						Debug.Log("Vessel " + v.vesselName + " solar panel, orientation factor: " + orientationFactor + ", temperature: " + d.panelData.temperature + " solar flux: " + solarFlux);
+						float resourceAmount = d.resourceRate * (float)orientationFactor * d.panelData.tempCurve.Evaluate(d.panelData.temperature) * multiplier;
+						Debug.Log("Vessel " + v.vesselName + ", adding " + resourceAmount + " " + d.resourceName + " over time " + TimeWarp.fixedDeltaTime);
+						AddResource(data, resourceAmount * TimeWarp.fixedDeltaTime, d.resourceName, modified);
+					}
+					else {
+						Debug.Log("Can't see Kerbol, blocked by " + hitInfo.collider.gameObject.name);
 					}
 				}
 			}
