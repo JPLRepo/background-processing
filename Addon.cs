@@ -81,51 +81,76 @@ namespace BackgroundProcessing
             double t1 = C / q;
             double dist = Math.Min(t0, t1);
 
-            // sphere is behind
-            if (dist < 0.0) return double.MaxValue;
-
-            return dist;
+            // if sphere is behind, return maxvalue, else it is visible and distance is returned
+            return dist < 0.0 ? double.MaxValue : dist;
         }
 
         // (*_*)
-        // return true if in direct sunlight  
-        public static bool DirectSunlight(Vessel vessel, out Vector3d sun_dir, out double sun_dist)
+        // return true if the body is visible from the vessel
+        // - vessel: vessel to test
+        // - dir: normalized vector from vessel to body
+        // - dist: distance from vector to body surface
+        // - return: true if visible, false otherwise
+        public static bool RaytraceBody(Vessel vessel, CelestialBody body, out Vector3d dir, out double dist)
         {
-            // bodies traced against
+            // shortcuts
             CelestialBody sun = FlightGlobals.Bodies[0];
             CelestialBody mainbody = vessel.mainBody;
             CelestialBody refbody = vessel.mainBody.referenceBody;
 
-            // sun doen't need raytracing, its always hit
-            // (*_*)
-            // When a vessel is orbiting the Sun, and the user switch from Flight to SpaceCenter scene, for a single tick, vessel.GetWorldPos3D() return the Sun position!!! 
-            //Vector3d vessel_pos = vessel.GetWorldPos3D();
-            Vector3d vessel_pos = vessel.orbit.getPositionAtUT(Planetarium.GetUniversalTime());
-            sun_dir = sun.position - vessel_pos;
-            sun_dist = sun_dir.magnitude;
-            sun_dir /= sun_dist;
-            sun_dist -= sun.Radius;
+            // generate ray parameters
+            Vector3d vessel_pos = VesselPosition(vessel);
+            dir = body.position - vessel_pos;
+            dist = dir.magnitude;
+            dir /= dist;
+            dist -= body.Radius;
 
-            // when orbiting the sun, assume sunlight
-            if (mainbody == sun) return true;
+            // store list of occluders
+            List<CelestialBody> occluders = new List<CelestialBody>();
 
-            // raytrace mainbody
-            double min_dist = RaytraceSphere(vessel_pos, sun_dir, mainbody.position, mainbody.Radius);
+            // do not trace against the mainbody if that is our target
+            if (body != mainbody) occluders.Add(mainbody);
 
-            // raytrace reference body, if mainbody is a satellite
-            if (refbody != sun) min_dist = Math.Min(min_dist, RaytraceSphere(vessel_pos, sun_dir, refbody.position, refbody.Radius));
+            // do not trace against the reference body if that is our target, or if there isn't one (eg: mainbody is the sun)
+            if (body != refbody || refbody == null) occluders.Add(refbody);
 
-            // raytrace satellites, if mainbody is a planet
-            foreach (CelestialBody sat in mainbody.orbitingBodies)
+            // trace against any satellites, but not when mainbody is the sun (eg: mainbody is a planet)
+            // we avoid the mainbody=sun case because it has a lot of satellites and the chances of occlusion are very low
+            // and they probably will occlude the sun only partially at best in that case
+            if (mainbody != sun) occluders.AddRange(mainbody.orbitingBodies);
+
+            // do the raytracing
+            double min_dist = double.MaxValue;
+            foreach (CelestialBody cb in occluders)
             {
-                min_dist = Math.Min(min_dist, RaytraceSphere(vessel_pos, sun_dir, sat.position, sat.Radius));
+                min_dist = Math.Min(min_dist, RaytraceSphere(vessel_pos, dir, cb.position, cb.Radius));
             }
 
-            // return true if vessel is in direct sunlight
-            return sun_dist < min_dist;
+            // return true if body is visible from vessel
+            return dist < min_dist;
         }
 
+        // (*_*)
+        // return true if landed somewhere
+        public static bool Landed(Vessel vessel)
+        {
+            if (vessel.loaded) return vessel.Landed || vessel.Splashed;
+            else return vessel.protoVessel.landed || vessel.protoVessel.splashed;
+        }
 
+        // (*_*)
+        // return vessel position
+        public static Vector3d VesselPosition(Vessel vessel)
+        {
+            if (vessel.loaded || Landed(vessel) || double.IsNaN(vessel.orbit.inclination))
+            {
+                return vessel.GetWorldPos3D();
+            }
+            else
+            {
+                return vessel.orbit.getPositionAtUT(Planetarium.GetUniversalTime());
+            }
+        }
 
         public float RequestBackgroundResource(Vessel vessel, float amount, string resource)
         {
@@ -629,7 +654,7 @@ namespace BackgroundProcessing
             // (*_*) determine sun visibility only once per-vessel
             Vector3d sun_dir;
             double sun_dist;
-            bool in_sunlight = DirectSunlight(v, out sun_dir, out sun_dist);
+            bool in_sunlight = RaytraceBody(v, FlightGlobals.Bodies[0], out sun_dir, out sun_dist);
 
             HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
             foreach (ResourceModuleData d in data.resourceModules)
