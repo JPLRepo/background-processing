@@ -25,6 +25,8 @@
 // - enabled background update during prelaunch (EXPERIMENTAL, seems to work)
 // - do not use KSP raycasting anymore, instead do sphere raycasting against celestial bodies directly
 // - raycast only once per-vessel, ignore part position in raycasting (no intra-vessel occlusion was possible anyway when off-rail)
+// - 0.4.2.0 - Compiled against KSP 1.1.2
+// - 0.4.3.0 - Compiled against KSP 1.1.3
 //
 // note: changes are market with '(*_*)'
 //
