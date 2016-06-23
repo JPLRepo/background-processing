@@ -27,6 +27,7 @@
 // - raycast only once per-vessel, ignore part position in raycasting (no intra-vessel occlusion was possible anyway when off-rail)
 // - 0.4.2.0 - Compiled against KSP 1.1.2
 // - 0.4.3.0 - Compiled against KSP 1.1.3
+//   - Reduce Garbage by using startup (one time) var allocations.
 //
 // note: changes are market with '(*_*)'
 //
@@ -65,23 +66,25 @@ namespace BackgroundProcessing
         // calculate hit point of the ray indicated by origin + direction * t with the sphere centered at 0,0,0 and with radius 'radius'
         // if there is no hit return double max value
         // it there is an hit return distance from origin to hit point
+        private static double A, B, C, discriminant, q, t0, t1, dist = 0.0f;
+
         public static double RaytraceSphere(Vector3d origin, Vector3d direction, Vector3d center, double radius)
         {
             // operate in sphere object space, so the origin is translated by -sphere_pos
             origin -= center;
 
-            double A = Vector3d.Dot(direction, direction);
-            double B = 2.0 * Vector3d.Dot(direction, origin);
-            double C = Vector3d.Dot(origin, origin) - radius * radius;
-            double discriminant = B * B - 4.0 * A * C;
+            A = Vector3d.Dot(direction, direction);
+            B = 2.0 * Vector3d.Dot(direction, origin);
+            C = Vector3d.Dot(origin, origin) - radius * radius;
+            discriminant = B * B - 4.0 * A * C;
 
             // ray missed the sphere (we consider single hits as misses)
             if (discriminant <= 0.0) return double.MaxValue;
 
-            double q = (-B - Math.Sign(B) * Math.Sqrt(discriminant)) * 0.5;
-            double t0 = q / A;
-            double t1 = C / q;
-            double dist = Math.Min(t0, t1);
+            q = (-B - Math.Sign(B) * Math.Sqrt(discriminant)) * 0.5;
+            t0 = q / A;
+            t1 = C / q;
+            dist = Math.Min(t0, t1);
 
             // if sphere is behind, return maxvalue, else it is visible and distance is returned
             return dist < 0.0 ? double.MaxValue : dist;
@@ -93,15 +96,21 @@ namespace BackgroundProcessing
         // - dir: normalized vector from vessel to body
         // - dist: distance from vector to body surface
         // - return: true if visible, false otherwise
+        private static CelestialBody sun = FlightGlobals.Bodies[0];
+        private static CelestialBody mainbody;
+        private static CelestialBody refbody;
+        private static Vector3d vessel_pos;
+        private static double min_dist;
+
         public static bool RaytraceBody(Vessel vessel, CelestialBody body, out Vector3d dir, out double dist)
         {
             // shortcuts
-            CelestialBody sun = FlightGlobals.Bodies[0];
-            CelestialBody mainbody = vessel.mainBody;
-            CelestialBody refbody = vessel.mainBody.referenceBody;
+            //CelestialBody sun = FlightGlobals.Bodies[0];
+            mainbody = vessel.mainBody;
+            refbody = vessel.mainBody.referenceBody;
 
             // generate ray parameters
-            Vector3d vessel_pos = VesselPosition(vessel);
+            vessel_pos = VesselPosition(vessel);
             dir = body.position - vessel_pos;
             dist = dir.magnitude;
             dir /= dist;
@@ -122,7 +131,7 @@ namespace BackgroundProcessing
             if (mainbody != sun) occluders.AddRange(mainbody.orbitingBodies);
 
             // do the raytracing
-            double min_dist = double.MaxValue;
+            min_dist = double.MaxValue;
             foreach (CelestialBody cb in occluders)
             {
                 min_dist = Math.Min(min_dist, RaytraceSphere(vessel_pos, dir, cb.position, cb.Radius));
@@ -154,14 +163,15 @@ namespace BackgroundProcessing
             }
         }
 
+        private HashSet<ProtoPartResourceSnapshot> modifiedResources = new HashSet<ProtoPartResourceSnapshot>();
         public float RequestBackgroundResource(Vessel vessel, float amount, string resource)
         {
             if (!vesselData.ContainsKey(vessel)) { return 0f; }
 
-            HashSet<ProtoPartResourceSnapshot> modified = new HashSet<ProtoPartResourceSnapshot>();
+            modifiedResources.Clear();
 
-            AddResource(vesselData[vessel], -amount, resource, modified);
-            float ret = ClampResource(modified);
+            AddResource(vesselData[vessel], -amount, resource, modifiedResources);
+            float ret = ClampResource(modifiedResources);
 
             return amount - ret;
         }
@@ -741,6 +751,7 @@ namespace BackgroundProcessing
         }
 
         // return sun luminosity
+        private static double semiMajorAxis;
         public static double SolarLuminosity
         {
             get
@@ -748,8 +759,8 @@ namespace BackgroundProcessing
                 // note: it is 0 before loading first vessel in a game session, we compute it in that case
                 if (PhysicsGlobals.SolarLuminosity <= double.Epsilon)
                 {
-                    double A = FlightGlobals.GetHomeBody().orbit.semiMajorAxis;
-                    return A*A*12.566370614359172*PhysicsGlobals.SolarLuminosityAtHome;
+                    semiMajorAxis = FlightGlobals.GetHomeBody().orbit.semiMajorAxis;
+                    return semiMajorAxis * semiMajorAxis * 12.566370614359172 * PhysicsGlobals.SolarLuminosityAtHome;
                 }
                 return PhysicsGlobals.SolarLuminosity;
             }
@@ -766,34 +777,38 @@ namespace BackgroundProcessing
         {
             if (FlightGlobals.fetch != null)
             {
-                List<Vessel> vessels = new List<Vessel>(FlightGlobals.Vessels);
-                vessels.Remove(FlightGlobals.ActiveVessel);
-
-                foreach (Vessel v in vessels)
+                // (*_*)
+                // Remove list to reduce garbage
+                var vessels = FlightGlobals.Vessels;
+                var active = FlightGlobals.ActiveVessel;
+                for (int i = 0; i < vessels.Count; i++)
                 {
+                    var vessel = vessels[i];
+                    if (vessel != active)
+                
                     //if (v.situation != Vessel.Situations.PRELAUNCH) // (*_*) EXPERIMENTAL
                     {
-                        if (!v.loaded)
+                        if (!vessel.loaded)
                         {
-                            if (!vesselData.ContainsKey(v))
+                            if (!vesselData.ContainsKey(vessel))
                             {
-                                if (!CanGetVesselData(v)) continue;
+                                if (!CanGetVesselData(vessel)) continue;
 
-                                vesselData.Add(v, GetVesselData(v));
-                                foreach (CallbackPair p in vesselData[v].callbacks.Keys)
+                                vesselData.Add(vessel, GetVesselData(vessel));
+                                foreach (CallbackPair p in vesselData[vessel].callbacks.Keys)
                                 {
-                                    moduleHandlers[p.moduleName].Load(v, p.partFlightID, ref vesselData[v].callbacks[p].data);
+                                    moduleHandlers[p.moduleName].Load(vessel, p.partFlightID, ref vesselData[vessel].callbacks[p].data);
                                 }
                             }
 
-                            HandleResources(v);
+                            HandleResources(vessel);
 
-                            foreach (CallbackPair p in vesselData[v].callbacks.Keys)
+                            foreach (CallbackPair p in vesselData[vessel].callbacks.Keys)
                             {
-                                moduleHandlers[p.moduleName].Invoke(v, p.partFlightID, RequestBackgroundResource, ref vesselData[v].callbacks[p].data);
+                                moduleHandlers[p.moduleName].Invoke(vessel, p.partFlightID, RequestBackgroundResource, ref vesselData[vessel].callbacks[p].data);
                             }
                         }
-                        else { vesselData.Remove(v); }
+                        else { vesselData.Remove(vessel); }
                     }
                 }
             }
