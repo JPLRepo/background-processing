@@ -131,12 +131,13 @@ namespace BackgroundProcessing
             if (mainbody != sun) occluders.AddRange(mainbody.orbitingBodies);
 
             // do the raytracing
+            // (*_*)
+            // Removed Foreach loop
             min_dist = double.MaxValue;
-            foreach (CelestialBody cb in occluders)
+            for (int i = 0; i < occluders.Count; i++)
             {
-                min_dist = Math.Min(min_dist, RaytraceSphere(vessel_pos, dir, cb.position, cb.Radius));
+                min_dist = Math.Min(min_dist, RaytraceSphere(vessel_pos, dir, occluders[i].position, occluders[i].Radius));
             }
-
             // return true if body is visible from vessel
             return dist < min_dist;
         }
@@ -315,10 +316,11 @@ namespace BackgroundProcessing
             if (m != null && m.moduleName == "ModuleCommand")
             {
                 ModuleCommand c = (ModuleCommand)m;
-
-                foreach (ModuleResource mr in c.inputResources)
-                {
-                    if (interestingResources.Contains(mr.name)) { return true; }
+                // (*_*)
+                // Changed foreach to for loop 
+                for (int i = 0; i < c.inputResources.Count; i++)
+                { 
+                    if (interestingResources.Contains(c.inputResources[i].name)) { return true; }
                 }
             }
 
@@ -331,9 +333,11 @@ namespace BackgroundProcessing
                     ModuleGenerator g = (ModuleGenerator)m;
                     if (g.inputList.Count <= 0)
                     {
-                        foreach (ModuleResource gr in g.outputList)
+                        // (*_*)
+                        // Changed foreach to for loop 
+                        for (int i = 0; i < g.inputList.Count; i++)
                         {
-                            if (interestingResources.Contains(gr.name)) return true;
+                            if (interestingResources.Contains(g.inputList[i].name)) return true;
                         }
                     }
                 }
@@ -352,11 +356,13 @@ namespace BackgroundProcessing
 
                 if (g.inputList.Count <= 0)
                 {
-                    foreach (ModuleResource gr in g.outputList)
+                    // (*_*)
+                    // Changed foreach to for loop 
+                    for (int i = 0; i < g.outputList.Count; i++)
                     {
-                        if (interestingResources.Contains(gr.name))
+                        if (interestingResources.Contains(g.outputList[i].name))
                         {
-                            ret.Add(new ResourceModuleData(gr.name, (float)gr.rate));
+                            ret.Add(new ResourceModuleData(g.outputList[i].name, (float)g.outputList[i].rate));
                         }
                     }
                 }
@@ -378,11 +384,13 @@ namespace BackgroundProcessing
             if (m != null && m.moduleName == "ModuleCommand")
             {
                 ModuleCommand c = (ModuleCommand)m;
-                foreach (ModuleResource mr in c.inputResources)
+                // (*_*)
+                // Changed foreach to for loop 
+                for (int i = 0; i < c.inputResources.Count; i++)
                 {
-                    if (interestingResources.Contains(mr.name))
+                    if (interestingResources.Contains(c.inputResources[i].name))
                     {
-                        ret.Add(new ResourceModuleData(mr.name, (float)-mr.rate));
+                        ret.Add(new ResourceModuleData(c.inputResources[i].name, (float)-c.inputResources[i].rate));
                     }
                 }
             }
@@ -795,16 +803,26 @@ namespace BackgroundProcessing
                                 if (!CanGetVesselData(vessel)) continue;
 
                                 vesselData.Add(vessel, GetVesselData(vessel));
-                                foreach (CallbackPair p in vesselData[vessel].callbacks.Keys)
+                                // (*_*)
+                                // Changed foreach to for loop 
+                                // foreach (CallbackPair p in vesselData[vessel].callbacks.Keys)
+                                // {
+                                for (int j = 0; j < vesselData[vessel].callbacks.Keys.Count; j++)
                                 {
+                                    var p = vesselData[vessel].callbacks.Keys.ElementAt(j);
                                     moduleHandlers[p.moduleName].Load(vessel, p.partFlightID, ref vesselData[vessel].callbacks[p].data);
                                 }
                             }
 
                             HandleResources(vessel);
 
-                            foreach (CallbackPair p in vesselData[vessel].callbacks.Keys)
+                            // (*_*)
+                            // Changed foreach to for loop 
+                            //foreach (CallbackPair p in vesselData[vessel].callbacks.Keys)
+                            //{
+                            for (int k = 0; k < vesselData[vessel].callbacks.Keys.Count; k++)
                             {
+                                var p = vesselData[vessel].callbacks.Keys.ElementAt(k);
                                 moduleHandlers[p.moduleName].Invoke(vessel, p.partFlightID, RequestBackgroundResource, ref vesselData[vessel].callbacks[p].data);
                             }
                         }
