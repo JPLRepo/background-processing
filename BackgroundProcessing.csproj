@@ -56,7 +56,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Addon.cs" />
+    <Compile Include="AddonConfig.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ResourceHandlers\Command.cs" />
+    <Compile Include="ResourceHandlers\Customhandler.cs" />
+    <Compile Include="ResourceHandlers\Generator.cs" />
+    <Compile Include="ResourceHandlers\SolarPanel.cs" />
+    <Compile Include="ResourceModuleHandler.cs" />
+    <Compile Include="UpdateHelper.cs" />
+    <Compile Include="VesselData.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="license.txt" />
@@ -99,6 +107,12 @@ cd "$(TargetDir)"
 xcopy "$(TargetDir)$(ProjectName).dll.mdb" "$(SolutionDir)Distribution\GameData\$(ProjectName)\" /Y
 
 
+if exist "$(SolutionDir)Distribution\GameData\$(ProjectName)\$(ProjectName)_V@(VersionNumber).dll" del "$(ProjectName)_V@(VersionNumber).dll"
+   
+if exist "$(SolutionDir)Distribution\GameData\$(ProjectName)\$(ProjectName)_V@(VersionNumber).pdb" del "$(ProjectName)_V@(VersionNumber).pdb"
+   
+if exist "$(SolutionDir)Distribution\GameData\$(ProjectName)\$(ProjectName)_V@(VersionNumber).dll.mdb" del "$(ProjectName)_V@(VersionNumber).dll.mdb"
+   
 ren "$(SolutionDir)Distribution\GameData\$(ProjectName)\$(ProjectName).dll" "$(ProjectName)_V@(VersionNumber).dll"
 ren "$(SolutionDir)Distribution\GameData\$(ProjectName)\$(ProjectName).pdb" "$(ProjectName)_V@(VersionNumber).pdb"
 ren "$(SolutionDir)Distribution\GameData\$(ProjectName)\$(ProjectName).dll.mdb" "$(ProjectName)_V@(VersionNumber).dll.mdb"
